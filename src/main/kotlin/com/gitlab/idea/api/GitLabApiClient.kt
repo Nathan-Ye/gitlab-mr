@@ -886,13 +886,22 @@ class GitLabApiClient(
         val force_remove_source_branch: Boolean? = null
     ) {
         fun toGitLabMergeRequest(): GitLabMergeRequest {
+            // 检查是否有冲突：如果有冲突且当前状态为 OPENED，则将状态设为 LOCKED
+            val hasConflict = has_conflicts ?: false
+            val apiState = MergeRequestState.fromString(state)
+            val finalState = if (hasConflict && apiState == MergeRequestState.OPENED) {
+                MergeRequestState.LOCKED
+            } else {
+                apiState
+            }
+
             return GitLabMergeRequest(
                 id = id,
                 iid = iid,
                 projectId = project_id,
                 title = title,
                 description = description,
-                state = MergeRequestState.fromString(state),
+                state = finalState,
                 sourceBranch = source_branch,
                 targetBranch = target_branch,
                 author = author.toGitLabUser(),
@@ -906,7 +915,7 @@ class GitLabApiClient(
                 webUrl = web_url,
                 draft = draft ?: false,
                 workInProgress = work_in_progress ?: false,
-                hasConflicts = has_conflicts ?: false,
+                hasConflicts = hasConflict,
                 labels = labels ?: emptyList(),
                 upvotes = upvotes ?: 0,
                 downvotes = downvotes ?: 0,
