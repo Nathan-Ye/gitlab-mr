@@ -822,6 +822,14 @@ class GitLabToolWindowContent(
                 mergeRequests[index] = updatedMR
             }
 
+            // 更新 filteredMergeRequests 列表中的MR
+            val filteredIndex = filteredMergeRequests.indexOfFirst { it.iid == updatedMR.iid }
+            if (filteredIndex != -1) {
+                filteredMergeRequests = filteredMergeRequests.toMutableList().apply {
+                    this[filteredIndex] = updatedMR
+                }
+            }
+
             // 检查是否需要从列表中移除（因状态变化不再符合筛选条件）
             val shouldRemove = when {
                 filterState != null && updatedMR.state != filterState -> true
@@ -829,24 +837,27 @@ class GitLabToolWindowContent(
             }
 
             if (shouldRemove) {
-                // 重新应用筛选（会调用 API）
-                applyFilters(filterState, filterScope, filterTitleKeyword)
+                // 从列表中移除该 MR
+                mrListPanel.removeMergeRequest(updatedMR.iid)
+                // 清空详情面板
+                mrDetailsPanel.clear()
             } else {
-                // 仅更新显示
-                mainContentPanel.updateMRDetails(updatedMR)
+                // 更新列表中该 MR 的显示
+                mrListPanel.updateMergeRequest(updatedMR)
+                // 更新详情面板
+                mrDetailsPanel.setMergeRequest(updatedMR)
             }
-
-            // 更新详情面板
-            mrDetailsPanel.setMergeRequest(updatedMR)
         }
 
         /**
          * 从列表中移除MR
          */
         private fun removeMRFromList(mr: GitLabMergeRequest) {
+            // 从数据中移除
             mergeRequests.removeAll { it.iid == mr.iid }
-            // 重新应用筛选（会调用 API）
-            applyFilters(filterState, filterScope, filterTitleKeyword)
+            filteredMergeRequests = filteredMergeRequests.filter { it.iid != mr.iid }
+            // 从列表 UI 中移除
+            mrListPanel.removeMergeRequest(mr.iid)
         }
     }
 }

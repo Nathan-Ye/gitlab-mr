@@ -256,6 +256,42 @@ class MRListPanel : JPanel() {
     }
 
     /**
+     * 更新列表中的单个合并请求
+     * 返回是否成功找到并更新了该 MR
+     */
+    fun updateMergeRequest(updatedMR: GitLabMergeRequest): Boolean {
+        // 在列表模型中查找对应的 MR
+        for (i in 0 until listModel.size()) {
+            val mr = listModel.getElementAt(i)
+            if (mr.iid == updatedMR.iid) {
+                // 保存当前选中的索引
+                val selectedIndex = mrList.selectedIndex
+                // 更新列表模型中的数据
+                listModel.set(i, updatedMR)
+                // 如果当前选中的是这个 MR，保持选中状态
+                if (selectedIndex == i) {
+                    mrList.selectedIndex = selectedIndex
+                }
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * 从列表中移除指定的合并请求
+     */
+    fun removeMergeRequest(mrIid: Long) {
+        for (i in 0 until listModel.size()) {
+            val mr = listModel.getElementAt(i)
+            if (mr.iid == mrIid) {
+                listModel.remove(i)
+                break
+            }
+        }
+    }
+
+    /**
      * 更新hasMore状态并结束加载状态
      */
     fun updateLoadStatus(hasMore: Boolean) {
