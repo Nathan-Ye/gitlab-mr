@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<idea-plugin>
+    <!-- Git4Idea optional dependencies configuration -->
+    <extensions defaultExtensionNs="com.intellij">
+    </extensions>
+</idea-plugin>

@@ -1,0 +1,49 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+gradle.properties.local
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# IntelliJ Platform Plugin
+.intellijPlatform/
+.kotlin/
+
+# Claude Code
+.claude/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Sandbox (test environment)
+.idea-sandbox/
+sandbox/
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+
+# Build outputs
+build/distributions/
+
+# Local configuration
+local.properties
+.settings/
+
+# IDE tool cache (qoder)
+.qoder/

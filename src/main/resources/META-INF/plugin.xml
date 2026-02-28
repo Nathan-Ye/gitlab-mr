@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<idea-plugin require-restart="false">
+    <id>com.gitlab.idea.integration</id>
+    <name>GitLab MR</name>
+    <vendor url="https://gitlab.com">GitLab Integration</vendor>
+
+    <description><![CDATA[
+        <p>GitLab Integration Plugin for IntelliJ IDEA</p>
+        <ul>
+            <li>View and manage GitLab Merge Requests</li>
+            <li>Support for GitLab REST API</li>
+            <li>Seamless integration with IDEA's Git workflow</li>
+        </ul>
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <h3>Version 1.0.0</h3>
+        <ul>
+            <li>Initial release</li>
+            <li>View GitLab Merge Requests</li>
+            <li>Filter by status and user</li>
+            <li>MR details panel</li>
+        </ul>
+    ]]></change-notes>
+
+    <!-- Please see https://plugins.jetbrains.com/docs/intellij/build-number-ranges.html -->
+    <idea-version since-build="241" until-build="251.*"/>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>com.intellij.modules.lang</depends>
+    <depends optional="true" config-file="gitlab-git.xml">Git4Idea</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Tool Window -->
+        <toolWindow id="GitLab" anchor="bottom" factoryClass="com.gitlab.idea.toolwindow.GitLabToolWindowFactory"
+                    icon="/icons/gitlab.svg" order="last"/>
+
+        <!-- Application Settings -->
+        <applicationConfigurable instance="com.gitlab.idea.config.GitLabConfigurable" displayName="GitLab Settings"/>
+
+        <!-- Project Settings -->
+        <projectConfigurable instance="com.gitlab.idea.config.GitLabProjectConfigurable" displayName="GitLab Project Settings"/>
+
+        <!-- Application Services -->
+        <applicationService id="com.gitlab.idea.GitLabApplicationService"
+                            serviceImplementation="com.gitlab.idea.GitLabApplicationService"/>
+
+        <!-- Project Services -->
+        <projectService id="com.gitlab.idea.GitLabProjectService"
+                        serviceImplementation="com.gitlab.idea.GitLabProjectService"/>
+
+        <!-- Notification Group -->
+        <notificationGroup id="GitLab.Notification.Group" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <!-- Add action group for the plugin -->
+        <group id="GitLab.Toolbar" text="GitLab Actions">
+            <action id="GitLab.Refresh" class="com.gitlab.idea.actions.RefreshAction"
+                    text="Refresh" description="Refresh GitLab data"
+                    icon="AllIcons.Actions.Refresh"/>
+            <action id="GitLab.AddServer" class="com.gitlab.idea.actions.AddServerAction"
+                    text="Add GitLab Server" description="Add a new GitLab server"
+                    icon="AllIcons.General.Add"/>
+            <separator/>
+        </group>
+    </actions>
+</idea-plugin>
