@@ -112,17 +112,6 @@ class GitLabApiClient(
      */
     suspend fun testConnection(): GitLabApiResponse<Map<String, Any>> = withContext(Dispatchers.IO) {
         try {
-            // 打印Token的前4位和长度（用于调试）
-            val tokenPreview = if (privateToken.length > 4) {
-                "${privateToken.take(4)}... (length: ${privateToken.length})"
-            } else {
-                privateToken
-            }
-
-            println("GitLab API Debug:")
-            println("  URL: $apiBaseUrl/user")
-            println("  Token: $tokenPreview")
-
             // 先尝试使用URL参数方式（浏览器方式）
             val urlWithToken = "$apiBaseUrl/user?private_token=${java.net.URLEncoder.encode(privateToken, "UTF-8")}"
 
@@ -135,10 +124,7 @@ class GitLabApiClient(
             val response1 = client.newCall(request1).execute()
             val responseBody1 = response1.body?.string()
 
-            println("  Method 1 (URL param): ${response1.code}")
-
             if (response1.isSuccessful) {
-                println("  ✓ Success with URL parameter method")
                 try {
                     val userJson = JsonParser.parseString(responseBody1).asJsonObject
                     val userInfo = mapOf(
@@ -153,7 +139,6 @@ class GitLabApiClient(
             }
 
             // 如果URL参数方式失败，尝试Header方式
-            println("  Trying method 2 (Header)...")
             val request2 = Request.Builder()
                 .url("$apiBaseUrl/user")
                 .header("PRIVATE-TOKEN", privateToken.trim())
@@ -163,9 +148,6 @@ class GitLabApiClient(
 
             val response2 = client.newCall(request2).execute()
             val responseBody2 = response2.body?.string()
-
-            println("  Method 2 (Header): ${response2.code}")
-            println("  Response: ${responseBody2?.take(200)}")
 
             if (response2.isSuccessful) {
                 try {
@@ -289,9 +271,6 @@ class GitLabApiClient(
             val encodedPath = java.net.URLEncoder.encode(projectPath, "UTF-8")
             val url = "$apiBaseUrl/projects/$encodedPath".withAuthToken()
 
-            println("GitLab API: getProject - $url")
-            println("  Project path: $projectPath -> $encodedPath")
-
             val request = Request.Builder()
                 .url(url)
                 .header("Accept", "application/json")
@@ -303,15 +282,12 @@ class GitLabApiClient(
             if (response.isSuccessful) {
                 val body = response.body?.string()
                 val project = gson.fromJson(body, GitLabProject::class.java)
-                println("  ✓ Got project: ${project.nameWithNamespace}")
                 GitLabApiResponse(project, true, null, response.code)
             } else {
                 val error = parseError(response.body?.string())
-                println("  ✗ Failed: $error")
                 GitLabApiResponse(null, false, error, response.code)
             }
         } catch (e: Exception) {
-            println("  ✗ Exception: ${e.message}")
             GitLabApiResponse(null, false, e.message ?: "Unknown error", -1)
         }
     }
@@ -406,10 +382,6 @@ class GitLabApiClient(
             val params = queryParams.joinToString("&")
             val url = "$baseUrl?$params".withAuthToken()
 
-            println("GitLab API: getMergeRequests - Project: $projectId, Page: $page")
-            if (!search.isNullOrBlank()) println("  Search: $search")
-            if (!scope.isNullOrBlank() && scope != "all") println("  Scope: $scope")
-
             val request = Request.Builder()
                 .url(url)
                 .header("Accept", "application/json")
@@ -425,16 +397,12 @@ class GitLabApiClient(
 
                 // 转换为业务模型
                 val mrs = mrDtos.map { it.toGitLabMergeRequest() }
-                println("  ✓ Got ${mrs.size} MRs (page $page)")
                 GitLabApiResponse(mrs, true, null, response.code)
             } else {
                 val error = parseError(response.body?.string())
-                println("  ✗ Failed: $error")
                 GitLabApiResponse(null, false, error, response.code)
             }
         } catch (e: Exception) {
-            println("  ✗ Exception: ${e.message}")
-            e.printStackTrace()
             GitLabApiResponse(null, false, e.message ?: "Unknown error", -1)
         }
     }

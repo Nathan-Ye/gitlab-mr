@@ -43,22 +43,12 @@ class GitLabPlugin {
 /**
  * 插件应用服务
  */
-class GitLabApplicationService {
-
-    init {
-        // 插件初始化
-        println("GitLab Integration Plugin loaded")
-    }
-}
+class GitLabApplicationService
 
 /**
  * 插件项目服务
  */
 class GitLabProjectService(val project: Project) {
-
-    init {
-        println("GitLab Integration Plugin loaded for project: ${project.name}")
-    }
 
     /**
      * 检查项目是否有Git仓库
