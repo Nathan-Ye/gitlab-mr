@@ -222,13 +222,13 @@ class MRDetailsPanel : JPanel() {
         // 包装分支行，使其自适应宽度
         val branchRowWrapper = createWrapperPanel(branchRowPanel)
         mainPanel.add(branchRowWrapper)
-        mainPanel.add(Box.createVerticalStrut(16))
+        mainPanel.add(Box.createVerticalStrut(6))
         mainPanel.add(createSeparator())
-        mainPanel.add(Box.createVerticalStrut(10))
+        mainPanel.add(Box.createVerticalStrut(4))
         mainPanel.add(infoPanel)
-        mainPanel.add(Box.createVerticalStrut(16))
+        mainPanel.add(Box.createVerticalStrut(6))
         mainPanel.add(createSeparator())
-        mainPanel.add(Box.createVerticalStrut(10))
+        mainPanel.add(Box.createVerticalStrut(4))
         val descriptionLabel = JLabel("描述")
         descriptionLabel.font = descriptionLabel.font.deriveFont(Font.BOLD, 13f)
         descriptionLabel.alignmentX = LEFT_ALIGNMENT
