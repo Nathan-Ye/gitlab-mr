@@ -481,13 +481,15 @@ class GitLabApiClient(
     // ==================== 分支相关API ====================
 
     /**
-     * 获取项目的所有分支
+     * 获取项目的所有分支（自动处理分页）
      * @param projectId 项目ID或路径
      * @param search 搜索关键词（可选）
+     * @param indicator 进度指示器（可选）
      */
     suspend fun getProjectBranches(
         projectId: String,
-        search: String? = null
+        search: String? = null,
+        indicator: ProgressIndicator? = null
     ): GitLabApiResponse<List<GitLabBranch>> = withContext(Dispatchers.IO) {
         try {
             val encodedProjectId = if (projectId.all { it.isDigit() }) {
@@ -496,30 +498,47 @@ class GitLabApiClient(
                 java.net.URLEncoder.encode(projectId, "UTF-8")
             }
 
-            val baseUrl = "$apiBaseUrl/projects/$encodedProjectId/repository/branches"
-            val url = if (search != null) {
-                "$baseUrl?search=${java.net.URLEncoder.encode(search, "UTF-8")}".withAuthToken()
-            } else {
-                baseUrl.withAuthToken()
+            val allBranches = mutableListOf<GitLabBranch>()
+            var page = 1
+            var hasMore = true
+
+            while (hasMore) {
+                indicator?.checkCanceled()
+
+                val baseUrl = "$apiBaseUrl/projects/$encodedProjectId/repository/branches"
+                val url = buildString {
+                    append(baseUrl)
+                    append("?page=$page&per_page=100")
+                    if (search != null) {
+                        append("&search=${java.net.URLEncoder.encode(search, "UTF-8")}")
+                    }
+                }.withAuthToken()
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("Accept", "application/json")
+                    .get()
+                    .build()
+
+                val response = client.newCall(request).execute()
+
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    val type = object : TypeToken<List<GitLabBranch>>() {}.type
+                    val branches = gson.fromJson<List<GitLabBranch>>(body, type)
+                    allBranches.addAll(branches)
+                    hasMore = branches.size >= 100
+                    page++
+                } else {
+                    hasMore = false
+                    if (allBranches.isEmpty()) {
+                        val error = parseError(response.body?.string())
+                        return@withContext GitLabApiResponse(null, false, error, response.code)
+                    }
+                }
             }
 
-            val request = Request.Builder()
-                .url(url)
-                .header("Accept", "application/json")
-                .get()
-                .build()
-
-            val response = client.newCall(request).execute()
-
-            if (response.isSuccessful) {
-                val body = response.body?.string()
-                val type = object : TypeToken<List<GitLabBranch>>() {}.type
-                val branches = gson.fromJson<List<GitLabBranch>>(body, type)
-                GitLabApiResponse(branches, true, null, response.code)
-            } else {
-                val error = parseError(response.body?.string())
-                GitLabApiResponse(null, false, error, response.code)
-            }
+            GitLabApiResponse(allBranches, true, null, 200)
         } catch (e: Exception) {
             GitLabApiResponse(null, false, e.message ?: "Unknown error", -1)
         }
