@@ -25,6 +25,7 @@ class MRActionToolbar : JPanel() {
     var onCloseMRClicked: ((GitLabMergeRequest) -> Unit)? = null
     var onMergeMRClicked: ((GitLabMergeRequest) -> Unit)? = null
     var onDeleteMRClicked: ((GitLabMergeRequest) -> Unit)? = null
+    var currentServerUrl: String? = null
 
     private var currentMR: GitLabMergeRequest? = null
 
@@ -136,10 +137,25 @@ class MRActionToolbar : JPanel() {
 
         override fun actionPerformed(e: AnActionEvent) {
             currentMR?.let { mr ->
-                val url = mr.webUrl
-                if (url.isNotEmpty()) {
+                val serverUrl = currentServerUrl
+                val webUrl = mr.webUrl
+                if (serverUrl != null && serverUrl.isNotEmpty() && webUrl.isNotEmpty()) {
                     try {
-                        Desktop.getDesktop().browse(URI(url))
+                        // 使用 URI 解析，避免使用已弃用的 URL 构造函数
+                        val serverUri = URI(serverUrl)
+                        val webUri = URI(webUrl)
+
+                        // 只替换域名和端口部分，保留路径
+                        val newUrl = URI(
+                            serverUri.scheme,
+                            serverUri.userInfo,
+                            serverUri.host,
+                            serverUri.port,
+                            webUri.path,
+                            webUri.query,
+                            webUri.fragment
+                        )
+                        Desktop.getDesktop().browse(newUrl)
                     } catch (ex: Exception) {
                         // 忽略打开浏览器失败的情况
                     }
@@ -149,7 +165,7 @@ class MRActionToolbar : JPanel() {
 
         override fun update(e: AnActionEvent) {
             val mr = currentMR
-            e.presentation.isEnabled = mr != null && mr.webUrl.isNotEmpty()
+            e.presentation.isEnabled = mr != null && currentServerUrl != null && mr.webUrl.isNotEmpty()
         }
     }
 }

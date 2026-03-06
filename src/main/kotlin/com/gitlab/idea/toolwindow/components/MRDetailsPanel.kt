@@ -407,6 +407,13 @@ class MRDetailsPanel : JPanel() {
         actionToolbar.onDeleteMRClicked = callback
     }
 
+    /**
+     * 设置当前服务器 URL，用于"在GitLab中打开"功能
+     */
+    fun setCurrentServerUrl(url: String?) {
+        actionToolbar.currentServerUrl = url
+    }
+
     private fun formatDate(dateString: String): String {
         return try {
             val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())

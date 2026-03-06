@@ -674,6 +674,8 @@ class GitLabToolWindowContent(
         }
 
         fun updateMRDetails(mr: GitLabMergeRequest) {
+            // 设置当前服务器 URL，用于"在GitLab中打开"功能
+            mrDetailsPanel.setCurrentServerUrl(currentServer?.url)
             mrDetailsPanel.setMergeRequest(mr)
         }
 
