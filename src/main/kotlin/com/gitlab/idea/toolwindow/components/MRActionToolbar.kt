@@ -8,14 +8,17 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.Separator
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
+import java.awt.Desktop
+import java.net.URI
 import javax.swing.JPanel
 
 /**
  * MR操作工具栏
- * 包含关闭、合并、删除三个操作按钮
+ * 包含在GitLab中打开、关闭、合并、删除操作按钮
  */
 class MRActionToolbar : JPanel() {
 
@@ -47,7 +50,9 @@ class MRActionToolbar : JPanel() {
         get() = listOf(
             CloseMRAction(),
             MergeMRAction(),
-            DeleteMRAction()
+            DeleteMRAction(),
+            Separator.create(),
+            OpenInBrowserMRAction()
         )
 
     /**
@@ -116,6 +121,35 @@ class MRActionToolbar : JPanel() {
             // 仅 OPENED 和 CLOSED 状态可以删除
             e.presentation.isEnabled = mr?.state == MergeRequestState.OPENED
                 || mr?.state == MergeRequestState.CLOSED
+        }
+    }
+
+    /**
+     * 在浏览器中打开MR Action
+     */
+    private inner class OpenInBrowserMRAction : AnAction(
+        "在GitLab中打开",
+        "在GitLab中打开此合并请求",
+        AllIcons.Ide.Link
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) {
+            currentMR?.let { mr ->
+                val url = mr.webUrl
+                if (url.isNotEmpty()) {
+                    try {
+                        Desktop.getDesktop().browse(URI(url))
+                    } catch (ex: Exception) {
+                        // 忽略打开浏览器失败的情况
+                    }
+                }
+            }
+        }
+
+        override fun update(e: AnActionEvent) {
+            val mr = currentMR
+            e.presentation.isEnabled = mr != null && mr.webUrl.isNotEmpty()
         }
     }
 }
