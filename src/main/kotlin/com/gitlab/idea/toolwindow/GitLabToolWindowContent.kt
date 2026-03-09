@@ -481,13 +481,27 @@ class GitLabToolWindowContent(
         if (dialog.showAndGet()) {
             val updatedServer = dialog.getServer()
             if (updatedServer != null) {
-                // 根据配置级别更新对应的服务
-                if (server.isDefault) {
-                    val configService = GitLabConfigService.getInstance()
-                    configService.updateServer(updatedServer)
+                // 根据编辑后的配置级别决定存储位置
+                if (updatedServer.isDefault) {
+                    // 如果设为默认服务器，先取消其他默认服务器
+                    val appConfigService = GitLabConfigService.getInstance()
+                    // 先从全局配置中删除（如果原来在全局配置中）
+                    appConfigService.removeServer(server.id)
+                    appConfigService.clearAllDefaultServers()
+                    appConfigService.addServer(updatedServer)
                 } else {
-                    val configService = GitLabProjectConfigService.getInstance(project)
-                    configService.updateServer(updatedServer)
+                    // 非默认服务器保存到项目级
+                    val projectConfigService = GitLabProjectConfigService.getInstance(project)
+                    val appConfigService = GitLabConfigService.getInstance()
+
+                    // 如果原来在全局配置中，先删除
+                    if (server.isDefault) {
+                        appConfigService.removeServer(server.id)
+                    }
+
+                    // 添加到项目级配置（使用 addServer 会自动处理相同URL的更新）
+                    projectConfigService.addServer(updatedServer)
+                    projectConfigService.setSelectedServer(updatedServer.id)
                 }
 
                 // 刷新数据

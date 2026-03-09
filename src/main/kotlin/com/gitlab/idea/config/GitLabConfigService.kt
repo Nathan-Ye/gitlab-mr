@@ -50,12 +50,23 @@ class GitLabConfigService : PersistentStateComponent<GitLabConfigService.State> 
     }
 
     /**
-     * 添加服务器配置（仅保存应用级/默认服务器）
+     * 添加服务器配置
+     * 如果设为默认服务器，则先将其他默认服务器取消，确保只有一个默认服务器
+     * 如果已存在相同URL的服务器，则更新而非重复添加
      */
     fun addServer(server: GitLabServer) {
-        // 仅保存应用级（默认）服务器
+        // 仅处理应用级（默认）服务器
         if (server.isDefault) {
-            state.serverList.servers.add(server)
+            // 1. 如果新服务器设为默认，先取消其他所有服务器的默认状态
+            state.serverList.servers.forEach { it.isDefault = false }
+
+            // 2. 检查是否存在相同URL的服务器，有则更新，无则添加
+            val existingIndex = state.serverList.servers.indexOfFirst { it.url == server.url }
+            if (existingIndex >= 0) {
+                state.serverList.servers[existingIndex] = server
+            } else {
+                state.serverList.servers.add(server)
+            }
         }
     }
 
@@ -107,6 +118,13 @@ class GitLabConfigService : PersistentStateComponent<GitLabConfigService.State> 
     fun clearAll() {
         state.serverList.servers.clear()
         state.selectedServerId = null
+    }
+
+    /**
+     * 清除所有服务器的默认状态
+     */
+    fun clearAllDefaultServers() {
+        state.serverList.servers.forEach { it.isDefault = false }
     }
 
     /**

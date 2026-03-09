@@ -183,11 +183,14 @@ class GitLabServerDialog(project: Project?, private val existingServer: GitLabSe
 
             infoArea.text = "✓ 服务器: $normalizedUrl\n\n项目路径将自动从Git远程检测"
 
+            // 编辑模式：保留原ID和token；新增模式：生成新ID
+            val serverId = parsedServer?.id?.takeIf { it.isNotEmpty() }
+                ?: GitLabServer.generateId()
             parsedServer = GitLabServer(
-                id = GitLabServer.generateId(),
+                id = serverId,
                 name = normalizedUrl,
                 url = normalizedUrl,
-                token = "",
+                token = parsedServer?.token ?: "",
                 isDefault = setAsDefaultCheckbox.isSelected
             )
         } catch (e: Exception) {

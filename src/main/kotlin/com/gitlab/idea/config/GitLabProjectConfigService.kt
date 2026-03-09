@@ -52,9 +52,16 @@ class GitLabProjectConfigService : PersistentStateComponent<GitLabProjectConfigS
 
     /**
      * 添加服务器配置
+     * 如果已存在相同URL的服务器，则更新而非重复添加
      */
     fun addServer(server: GitLabServer) {
-        state.serverList.servers.add(server)
+        // 检查是否存在相同URL的服务器，有则更新，无则添加
+        val existingIndex = state.serverList.servers.indexOfFirst { it.url == server.url }
+        if (existingIndex >= 0) {
+            state.serverList.servers[existingIndex] = server
+        } else {
+            state.serverList.servers.add(server)
+        }
     }
 
     /**
