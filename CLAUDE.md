@@ -73,13 +73,18 @@ verify.bat    # Windows script that runs clean buildPlugin
 
 **Configuration System:**
 - `GitLabConfigService.kt` - `PersistentStateComponent` storing `GitLabServer` configs
-  - Application-level storage: `GitLabConfig.xml`
-  - Methods: `addServer()`, `removeServer()`, `getSelectedServer()`, `setSelectedServer()`
+  - Application-level storage: `GitLabConfig.xml` (IDEA全局配置目录)
+  - Methods: `addServer()`, `removeServer()`, `getSelectedServer()`, `setSelectedServer()`, `clearAllDefaultServers()`, `getDefaultServers()`
+  - 特性：添加默认服务器时会自动取消其他默认，确保只有一个默认服务器
+- `GitLabProjectConfigService.kt` - Project-level storage
+  - Storage: `GitLabProjectConfig.xml` (项目目录下 `.idea/` 文件夹)
+  - Methods: `addServer()`, `updateServer()`, `removeServer()`, `getSelectedServer()`, `setSelectedServer()`
+  - 特性：添加服务器时检查URL重复，避免重复配置
 - `GitLabConfigurable.kt` - Global settings UI (application-level)
 - `GitLabProjectConfigurable.kt` - Project settings UI
 
 **Data Models (`model/GitLabServer.kt`):**
-- `GitLabServer` - Server config with id, name, url, token, isProjectLevel, projectPath
+- `GitLabServer` - Server config with id, name, url, token, isDefault
 - `GitLabProject` - Project info (id, name, path, webUrl, etc.)
 - `GitLabMergeRequest` - MR with all fields (state, branches, author, assignees, etc.)
 - `MergeRequestState` - Enum: OPENED, CLOSED, LOCKED, MERGED
@@ -111,13 +116,32 @@ verify.bat    # Windows script that runs clean buildPlugin
 
 1. Plugin loads → `GitLabToolWindowFactory.createToolWindowContent()`
 2. `GitLabToolWindowContent.initialize()` called
-3. Checks `GitLabConfigService` for servers:
+3. `loadInitialState()` loads configuration with priority:
+   - **Level 1**: Project-level selected server (highest priority)
+   - **Level 2**: Application-level selected server or first default server
+   - **Level 3**: Any available server in project config (fallback)
    - No servers → Show `EmptyStatePanel`
-   - Has selected server → Call `loadData(server)`
 4. `loadData()` attempts three strategies (in order):
    1. Use `server.projectPath` if configured
    2. Extract project path from Git remote URL via `GitUtil`
    3. Fallback to `getUserProjects()` and use first project
+
+### Server Configuration Storage
+
+- **Application-level (default server)**:
+  - File: `GitLabConfig.xml` in IDEA options directory
+  - Example: `%APPDATA%\JetBrains\IDEA2025.1\options\GitLabConfig.xml`
+  - Shared across all projects
+
+- **Project-level**:
+  - File: `GitLabProjectConfig.xml` in project `.idea` folder
+  - Example: `<ProjectPath>\.idea\GitLabProjectConfig.xml`
+  - Only for current project
+
+- **Key behaviors**:
+  - Only one default server allowed (checking "Set as default" clears other defaults)
+  - Same URL server will be updated instead of duplicated
+  - Editing server preserves original ID and token
 5. On success → Fetch MRs via `getMergeRequests()` → Show `MainContentPanel`
 6. On error → Show `ErrorStatePanel`
 
