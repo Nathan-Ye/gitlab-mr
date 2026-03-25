@@ -78,8 +78,29 @@ class MRDetailsPanel : JPanel() {
         centerCardPanel.add(emptyStatePanel, "EMPTY")
         centerCardPanel.add(scrollPane, "CONTENT")
 
+        // 创建标签栏，标签位置放在底部
+        val tabbedPane = JTabbedPane(JTabbedPane.BOTTOM)
+        tabbedPane.background = UIUtil.getPanelBackground()
+
+        // 详情标签页 - 使用 centerCardPanel
+        // 提交标签页 - 暂时为空
+        val commitsTabPanel = JPanel(BorderLayout())
+        val commitsEmptyLabel = JLabel("提交记录加载中...")
+        commitsEmptyLabel.font = commitsEmptyLabel.font.deriveFont(Font.PLAIN, 14f)
+        commitsEmptyLabel.foreground = JBColor.GRAY
+        commitsEmptyLabel.horizontalAlignment = SwingConstants.CENTER
+        commitsEmptyLabel.verticalAlignment = SwingConstants.CENTER
+        commitsTabPanel.add(commitsEmptyLabel, BorderLayout.CENTER)
+
+        // 添加标签页
+        tabbedPane.addTab("详情", centerCardPanel)
+        tabbedPane.addTab("提交", commitsTabPanel)
+
+        // 默认选中详情标签
+        tabbedPane.selectedIndex = 0
+
         add(actionToolbar, BorderLayout.NORTH)
-        add(centerCardPanel, BorderLayout.CENTER)
+        add(tabbedPane, BorderLayout.CENTER)
 
         setupUI()
     }
