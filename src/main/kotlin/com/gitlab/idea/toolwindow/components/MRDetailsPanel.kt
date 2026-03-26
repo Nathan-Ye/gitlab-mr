@@ -52,6 +52,12 @@ class MRDetailsPanel : JPanel() {
     private val centerCardPanel: JPanel
     private val centerCardLayout: CardLayout
 
+    // 外层卡片布局，用于切换空状态和标签栏内容
+    private val outerCardLayout = CardLayout()
+    private val outerCardPanel = JPanel(outerCardLayout)
+    private val emptyStateOuterPanel = JPanel()
+    private val tabbedPane: JTabbedPane
+
     init {
         layout = BorderLayout()
 
@@ -65,6 +71,11 @@ class MRDetailsPanel : JPanel() {
         emptyStateLabel.verticalAlignment = SwingConstants.CENTER
         emptyStatePanel.add(emptyStateLabel, BorderLayout.CENTER)
 
+        // 外层空状态面板
+        emptyStateOuterPanel.layout = BorderLayout()
+        emptyStateOuterPanel.background = UIUtil.getPanelBackground()
+        emptyStateOuterPanel.add(emptyStatePanel, BorderLayout.CENTER)
+
         // 创建滚动面板
         scrollPane = JScrollPane(mainPanel)
         scrollPane.border = null
@@ -75,11 +86,10 @@ class MRDetailsPanel : JPanel() {
         // 创建中心卡片面板，用于在空状态和详情之间切换
         centerCardLayout = CardLayout()
         centerCardPanel = JPanel(centerCardLayout)
-        centerCardPanel.add(emptyStatePanel, "EMPTY")
         centerCardPanel.add(scrollPane, "CONTENT")
 
         // 创建标签栏，标签位置放在底部
-        val tabbedPane = JTabbedPane(JTabbedPane.BOTTOM)
+        tabbedPane = JTabbedPane(JTabbedPane.BOTTOM)
         tabbedPane.background = UIUtil.getPanelBackground()
 
         // 详情标签页 - 使用 centerCardPanel
@@ -99,8 +109,12 @@ class MRDetailsPanel : JPanel() {
         // 默认选中详情标签
         tabbedPane.selectedIndex = 0
 
+        // 外层卡片面板添加空状态和标签栏
+        outerCardPanel.add(emptyStateOuterPanel, "EMPTY")
+        outerCardPanel.add(tabbedPane, "CONTENT")
+
         add(actionToolbar, BorderLayout.NORTH)
-        add(tabbedPane, BorderLayout.CENTER)
+        add(outerCardPanel, BorderLayout.CENTER)
 
         setupUI()
     }
@@ -119,7 +133,7 @@ class MRDetailsPanel : JPanel() {
         titleLabel.background = UIUtil.getPanelBackground()
         titleLabel.alignmentX = LEFT_ALIGNMENT
         // 设置最大宽度为无限制，让文本区填充可用宽度
-        titleLabel.maximumSize = java.awt.Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE)
+        titleLabel.maximumSize = Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE)
 
         // 状态标签 - 使用圆角设计
         stateLabel.font = stateLabel.font.deriveFont(Font.BOLD, 12f)
@@ -309,8 +323,9 @@ class MRDetailsPanel : JPanel() {
     fun setMergeRequest(mr: GitLabMergeRequest) {
         currentMR = mr
 
-        // 显示工具栏和详情内容
+        // 显示工具栏和外层标签栏内容
         actionToolbar.isVisible = true
+        outerCardLayout.show(outerCardPanel, "CONTENT")
         centerCardLayout.show(centerCardPanel, "CONTENT")
 
         // 设置标题
@@ -408,9 +423,9 @@ class MRDetailsPanel : JPanel() {
     fun clear() {
         currentMR = null
 
-        // 隐藏工具栏，显示空状态
+        // 隐藏工具栏，显示外层空状态
         actionToolbar.isVisible = false
-        centerCardLayout.show(centerCardPanel, "EMPTY")
+        outerCardLayout.show(outerCardPanel, "EMPTY")
 
         // 清空工具栏按钮状态
         actionToolbar.updateButtonStates(null)
@@ -468,7 +483,7 @@ class MRDetailsPanel : JPanel() {
         panel.background = UIUtil.getPanelBackground()
         panel.alignmentX = LEFT_ALIGNMENT
         // 设置最大尺寸为无限制，让包装面板填充可用宽度
-        panel.maximumSize = java.awt.Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE)
+        panel.maximumSize = Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE)
         panel.add(component, BorderLayout.CENTER)
         return panel
     }
