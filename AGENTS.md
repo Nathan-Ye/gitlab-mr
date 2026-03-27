@@ -1,387 +1,326 @@
 # AGENTS.md
 
-This file provides guidance to AI coding agents when working with this repository.
+This file gives coding agents a current, repo-specific map of the project. It is intended to be more accurate than older docs when they disagree.
 
 ---
 
-## Project Overview
+## Project Snapshot
 
-This is an **IntelliJ IDEA plugin** that integrates GitLab Merge Request (MR) functionality directly into the IDE. It provides a tool window for viewing and managing GitLab MRs without leaving the development environment.
+- Project type: IntelliJ IDEA plugin
+- Plugin name: `GitLab MR`
+- Plugin ID: `com.gitlab.idea.integration`
+- Current Gradle project version: `1.0.3`
+- Main language: Kotlin
+- Target JVM: Java 17
+- Primary purpose: view and operate GitLab Merge Requests inside the IDE tool window
 
-**Plugin Name:** GitLab MR  
-**Plugin ID:** `com.gitlab.idea.integration`  
-**Version:** 1.0.0  
-**Language:** 中文 (Chinese)
-
-### Key Features
-- View and manage GitLab Merge Requests in a dedicated tool window
-- Filter MRs by state (Opened, Closed, Locked, Merged) and username
-- Auto-detect GitLab projects from Git remote URLs
-- Multi-server support (GitLab.com and self-hosted instances)
-- Create new Merge Requests from IDE
-- View detailed MR information including branches, author, assignees, reviewers
+The UI text and product copy are primarily Chinese. Some source files appear garbled when viewed in a terminal because of encoding/display issues; do not assume the source itself is broken until verified in IDEA.
 
 ---
 
-## Technology Stack
+## Verified Stack
 
-| Component | Version | Purpose |
-|-----------|---------|---------|
-| Kotlin | 2.1.0 | Programming language |
-| IntelliJ Platform | 2024.2+ (build 241+) | Plugin SDK |
-| Gradle | 8.4+ | Build tool with Kotlin DSL |
-| JDK | 17 | Target JVM version |
-| OkHttp | 4.12.0 | HTTP client for API calls |
-| Gson | 2.10.1 | JSON serialization/deserialization |
-| kotlinx-coroutines | Bundled with IntelliJ | Async operations |
+From `build.gradle.kts` and `gradle.properties`:
 
-### Platform Compatibility
-- **Since Build:** 241 (IntelliJ IDEA 2024.2)
-- **Until Build:** 253.* (IntelliJ IDEA 2025.3)
-- **IDE Compatibility:** IntelliJ IDEA Community/Ultimate 2024.2+
-- **Optional Dependency:** Git4Idea (for Git integration features)
+- Kotlin: `2.1.0`
+- IntelliJ Platform Gradle Plugin: `2.11.0`
+- IntelliJ platform target: `IC 2024.2`
+- Gson: `2.10.1`
+- OkHttp: `4.12.0`
+- Bundled plugin: `Git4Idea`
+- Gradle distribution in wrapper properties: `8.13`
+
+Important compatibility detail:
+
+- `build.gradle.kts` sets `untilBuild` to `253.*`
+- `src/main/resources/META-INF/plugin.xml` currently declares `until-build="251.*"`
+
+If you touch compatibility metadata, update both places or decide which one is the source of truth and align them.
 
 ---
 
-## Build and Development Commands
+## Current Repository Layout
 
-### Prerequisites
-- JDK 17 installed and configured
-- IntelliJ IDEA 2023.2 or later (for development)
+Key source roots:
 
-### Building
+- `src/main/kotlin/com/gitlab/idea`
+- `src/main/resources/META-INF`
+- `src/main/resources/icons`
 
-```bash
-# Windows
+Notable Kotlin modules:
+
+- `GitLabPlugin.kt`
+  - plugin companion helpers
+  - `GitLabApplicationService`
+  - `GitLabProjectService`
+- `api/GitLabApiClient.kt`
+  - all REST calls
+  - auth fallback logic
+  - DTO to model mapping
+- `config/`
+  - application-level and project-level persistent config
+  - settings UI
+- `model/GitLabServer.kt`
+  - all core models live here, not just server models
+- `toolwindow/`
+  - tool window factory
+  - main card-layout content controller
+  - server dialog
+  - create MR dialog
+  - confirmation dialog for destructive MR actions
+- `toolwindow/components/`
+  - empty/loading/error panels
+  - MR list
+  - MR details
+  - toolbars
+- `util/`
+  - Git helpers
+  - notification helpers
+
+There is no `src/test` tree at the moment.
+
+---
+
+## How The Plugin Actually Works
+
+### Entry points
+
+`plugin.xml` registers:
+
+- tool window: `com.gitlab.idea.toolwindow.GitLabToolWindowFactory`
+- application configurable: `GitLabConfigurable`
+- project configurable: `GitLabProjectConfigurable`
+- application service: `GitLabApplicationService`
+- project service: `GitLabProjectService`
+- notification group: `GitLab.Notification.Group`
+
+### Tool window flow
+
+`GitLabToolWindowContent` is the real coordinator.
+
+It maintains four card states:
+
+- empty
+- error
+- loading
+- main
+
+Initialization flow today:
+
+1. Read project-level selected server first.
+2. Else use app-level selected server or first default server.
+3. Else fall back to the first project-level server.
+4. Else show empty state.
+
+### Project detection flow
+
+The current implementation is narrower than older docs suggest.
+
+`loadData(server)` does this:
+
+1. Create `GitLabApiClient`.
+2. Call `GitUtil.getMainRepository(project)`.
+3. This only returns a repository when the project has exactly one Git repo.
+4. Read the `origin` remote URL.
+5. Extract GitLab project path from remote URL.
+6. Call `apiClient.getProject(projectPath)`.
+7. Load page 1 of merge requests.
+
+Current fallback behavior:
+
+- There is no implemented fallback to "configured project path".
+- There is no implemented fallback to "user's first accessible project".
+- Multi-repo projects currently degrade to an error because `getMainRepository()` returns `null` unless there is exactly one repo.
+
+If you change project resolution, update this document and the user docs.
+
+---
+
+## Supported MR Features
+
+Verified from `GitLabToolWindowContent`, `MRListPanel`, `MRDetailsPanel`, `MRActionToolbar`, and `CreateMRDialog`:
+
+- MR list loading with server-side pagination
+- Infinite scroll style "load more"
+- State filter: `OPENED`, `CLOSED`, `LOCKED`, `MERGED`
+- Scope filter: all, created by me, assigned to me
+- Title keyword search
+- MR details panel
+- Open MR in browser
+- Close MR
+- Merge MR
+- Delete MR
+- Create MR
+- Optional remove-source-branch when creating or merging
+- Prefill MR title/description from latest commit on selected source branch
+- "merge current branch" helper in create dialog
+- Preload branches and members before opening the create dialog
+
+Behavior detail:
+
+- `LOCKED` is not a direct GitLab state mapping. The client maps `OPENED + has_conflicts=true` to `MergeRequestState.LOCKED`.
+- Delete is enabled only for `OPENED` and `CLOSED` in the toolbar logic.
+- Merge and close are enabled only for `OPENED`.
+
+---
+
+## API Layer Notes
+
+`GitLabApiClient` is the single integration point.
+
+Implemented endpoint groups:
+
+- `/user`
+- `/projects`
+- `/projects/:id`
+- `/projects/:id/merge_requests`
+- `/projects/:id/merge_requests/:iid`
+- `/projects/:id/merge_requests/:iid/merge`
+- `/projects/:id/repository/branches`
+- `/projects/:id/members/all`
+
+Auth behavior:
+
+- Most methods use URL query auth via `private_token`
+- Some methods also send `PRIVATE-TOKEN`
+- `testConnection()` and `getCurrentUser()` explicitly try URL auth first, then header auth
+
+Implementation caveat:
+
+- `apiBaseUrl` is built from `server.url` directly
+- `normalizeUrl()` exists but is not used
+- if a stored server URL ends with `/`, requests can become `...//api/v4`
+- `GitLabServerDialog.parseServerUrl()` currently normalizes host/protocol, so dialog-created servers are usually safe
+- manually edited config through `GitLabConfigurable` can still store unnormalized URLs
+
+---
+
+## Configuration Model
+
+Two persistent services exist:
+
+- app-level: `GitLabConfigService`
+- project-level: `GitLabProjectConfigService`
+
+Storage files:
+
+- `GitLabConfig.xml`
+- `GitLabProjectConfig.xml`
+
+Behavior differences matter:
+
+- `GitLabConfigService.addServer()` only persists servers where `isDefault == true`
+- `GitLabProjectConfigService.addServer()` stores non-default/project-scoped servers
+- both services dedupe by `url`, not by `id`
+
+Practical consequence:
+
+- the add/edit server flow in the tool window is the main path that correctly routes servers to app or project storage
+- `GitLabConfigurable` is less aligned with that model and may surprise you if you extend it without reading service logic first
+
+---
+
+## Build And Verification Reality
+
+Expected commands:
+
+```powershell
 gradlew.bat buildPlugin
-
-# macOS/Linux
-./gradlew buildPlugin
-```
-
-**Output:** `build/distributions/gitlab-idea-plugin-1.0.0.zip`
-
-### Other Commands
-
-```bash
-# Clean build artifacts
 gradlew.bat clean
-
-# Verification build (Windows only)
 verify.bat
 ```
 
-### Development Workflow
+Current repository issue:
 
-1. **Open project in IntelliJ IDEA**
-2. **Configure SDK:** File → Project Structure → Project → SDK: Java 17
-3. **Run Configuration:**
-   - Run → Edit Configurations → Add "Plugin" configuration
-   - VM options (optional): `-Xmx2g`
-4. **Run/Debug:** Click Run (Shift+F10) or Debug (Shift+F9)
-   - This launches a sandbox IDEA instance with the plugin loaded
+- `gradle/wrapper/gradle-wrapper.properties` exists
+- `gradle/wrapper/gradle-wrapper.jar` is missing
+- `./gradlew.bat buildPlugin` currently fails with `ClassNotFoundException: org.gradle.wrapper.GradleWrapperMain`
 
----
+That means agents cannot rely on the checked-in wrapper as-is. Before promising build verification, either:
 
-## Project Structure
+- restore `gradle-wrapper.jar`, or
+- use a separately installed Gradle if available and acceptable
 
-```
-src/
-└── main/
-    ├── kotlin/com/gitlab/idea/           # Kotlin source code
-    │   ├── GitLabPlugin.kt               # Plugin main entry point
-    │   ├── actions/                      # User actions
-    │   │   ├── AddServerAction.kt        # Add GitLab server action
-    │   │   └── RefreshAction.kt          # Refresh MR data action
-    │   ├── api/                          # GitLab API layer
-    │   │   └── GitLabApiClient.kt        # REST API client (OkHttp + Gson)
-    │   ├── config/                       # Configuration management
-    │   │   ├── GitLabConfigurable.kt     # Global settings UI
-    │   │   ├── GitLabConfigService.kt    # Persistent config storage
-    │   │   ├── GitLabProjectConfigurable.kt  # Project-level settings
-    │   │   └── GitLabProjectConfigService.kt # Project config storage
-    │   ├── model/                        # Data models
-    │   │   └── GitLabServer.kt           # Server, MR, User, Project data classes
-    │   ├── toolwindow/                   # Tool window UI
-    │   │   ├── GitLabToolWindowFactory.kt    # Tool window factory
-    │   │   ├── GitLabToolWindowContent.kt    # Content manager (CardLayout)
-    │   │   ├── GitLabServerDialog.kt         # Add/edit server dialog
-    │   │   ├── CreateMRDialog.kt             # Create MR dialog
-    │   │   ├── ToolWindowMutexManager.kt     # UI state management
-    │   │   └── components/                   # UI components
-    │   │       ├── EmptyStatePanel.kt        # No servers configured
-    │   │       ├── ErrorStatePanel.kt        # Error display
-    │   │       ├── LoadingStatePanel.kt      # Loading indicator
-    │   │       ├── MRListPanel.kt            # MR list with filters
-    │   │       ├── MRDetailsPanel.kt         # MR detail view
-    │   │       ├── MRActionToolbar.kt        # MR action buttons
-    │   │       └── ToolWindowSideToolbar.kt  # Side toolbar
-    │   └── util/                         # Utility classes
-    │       ├── GitLabNotifications.kt    # Notification helpers
-    │       └── GitUtil.kt                # Git repository utilities
-    └── resources/META-INF/               # Plugin resources
-        ├── plugin.xml                    # Plugin configuration
-        └── gitlab-git.xml                # Git4Idea dependency config
-```
+Do not describe the wrapper build as verified unless you have fixed that first.
 
 ---
 
-## Architecture Details
+## Known Documentation Drift
 
-### Plugin Entry Points
+Older docs in the repo may be stale. Verified mismatches include:
 
-1. **GitLabPlugin.kt** - Main plugin class with version info and static helpers
-2. **GitLabApplicationService** - Application-level service (initialized on plugin load)
-3. **GitLabProjectService** - Project-level service, provides `hasGitRepository()`
+- project version is `1.0.3`, not `1.0.0`
+- plugin XML change notes say "Version 1.0.3" but still describe an initial release
+- `plugin.xml` and Gradle `patchPluginXml` disagree on `untilBuild`
+- old docs mention broader project loading fallbacks that are not implemented now
+- old docs imply Linux/macOS wrapper usage, but only `gradlew.bat` is present in the repo
 
-### Tool Window System
-
-The tool window uses a **CardLayout** to switch between states:
-
-1. **EmptyStatePanel** - No servers configured
-2. **ErrorStatePanel** - Loading/connection failures
-3. **LoadingStatePanel** - Data loading in progress
-4. **MainContentPanel** - MR list + details split view (from `GitLabToolWindowContent`)
-
-### API Layer
-
-**GitLabApiClient.kt** - Single-class REST API client:
-- Uses OkHttp with 30-second timeouts
-- Supports two authentication methods:
-  - URL parameter: `?private_token={token}` (browser-compatible)
-  - Header: `PRIVATE-TOKEN: {token}` (standard, more reliable)
-- Uses Kotlin coroutines (`suspend` functions) for async operations
-- Key methods:
-  - `testConnection()` - Validates credentials via `/user` endpoint
-  - `getProject(projectPath)` - Gets project by path (URL-encoded)
-  - `getMergeRequests()` - Paginated MR listing
-  - `getAllMergeRequests()` - Auto-paginates to fetch all MRs
-  - `createMergeRequest()` - Creates new MR
-
-### Configuration System
-
-**GitLabConfigService.kt** - Application-level persistent storage:
-- Implements `PersistentStateComponent`
-- Storage: `GitLabConfig.xml` in IDEA config directory
-- Methods: `addServer()`, `removeServer()`, `getServers()`, `getSelectedServer()`
-
-**GitLabProjectConfigService.kt** - Project-level configuration:
-- Per-project server associations
-
-### Data Models
-
-Located in `model/GitLabServer.kt`:
-
-| Class | Description |
-|-------|-------------|
-| `GitLabServer` | Server config (id, name, url, token, isDefault) |
-| `GitLabProject` | Project info (id, name, path, webUrl, etc.) |
-| `GitLabMergeRequest` | MR with all fields (state, branches, author, assignees, reviewers, etc.) |
-| `MergeRequestState` | Enum: OPENED, CLOSED, LOCKED, MERGED |
-| `GitLabUser` | User details (id, username, name, avatarUrl, etc.) |
-| `GitLabBranch` | Branch information |
-| `GitLabCommit` | Commit details |
-| `CreateMergeRequestRequest/Response` | MR creation DTOs |
-| `GitLabApiResponse<T>` | Generic API response wrapper |
-
-### Configuration Loading Flow
-
-1. Plugin loads → `GitLabToolWindowFactory.createToolWindowContent()`
-2. `GitLabToolWindowContent.initialize()` called
-3. Checks `GitLabConfigService` for servers:
-   - No servers → Show `EmptyStatePanel`
-   - Has selected server → Call `loadData(server)`
-4. `loadData()` attempts multiple strategies:
-   1. Use configured project path if available
-   2. Extract project path from Git remote URL via `GitUtil`
-   3. Fallback to user's first accessible project
-5. On success → Fetch MRs → Show main content
-6. On error → Show `ErrorStatePanel`
+Treat `build.gradle.kts`, `plugin.xml`, and the Kotlin source as authoritative over prose docs.
 
 ---
 
-## GitLab API Integration
+## Working Guidelines For Agents
 
-- **Base URL:** `{serverUrl}/api/v4`
-- **Authentication:** Private Token via header or URL parameter
-- **Project Path Encoding:** Must URL-encode paths: `group/subgroup/project` → `group%2Fsubgroup%2Fproject`
+Before changing behavior:
 
-### API Endpoints Used
+1. Read `build.gradle.kts`, `plugin.xml`, and the directly affected Kotlin file.
+2. Check whether a similar action already exists in the tool window flow.
+3. Check both config services before changing persistence behavior.
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/user` | GET | Get current user info |
-| `/projects` | GET | List user's projects |
-| `/projects/:id` | GET | Get project details |
-| `/projects/:id/merge_requests` | GET | List MRs |
-| `/projects/:id/merge_requests/:iid` | GET | Get single MR |
-| `/projects/:id/merge_requests` | POST | Create MR |
-| `/projects/:id/merge_requests/:iid/merge` | PUT | Merge MR |
-| `/projects/:id/merge_requests/:iid` | DELETE | Close/Delete MR |
+When editing UI code:
 
----
+- Prefer IntelliJ platform Swing components already used in the repo.
+- Keep light/dark theme compatibility.
+- Preserve current action toolbar patterns unless there is a clear reason to refactor.
 
-## Important Development Notes
+When editing async code:
 
-### 1. Coroutines and Threading
+- UI updates should stay on EDT via `ApplicationManager.getApplication().invokeLater`.
+- Background network work currently uses either coroutines or `Task.Backgroundable`; follow the local style in the touched file.
 
-All UI updates must be on the EDT (Event Dispatch Thread):
+When editing Git-related behavior:
 
-```kotlin
-// Background work with UI update
-launch(Dispatchers.IO) {
-    val data = fetchData()  // Network call
-    withContext(Dispatchers.Main) {
-        updateUI(data)      // UI update
-    }
-}
+- Read `util/GitUtil.kt` first.
+- Be careful with the single-repository assumption in `getMainRepository()`.
 
-// Alternative using invokeLater
-ApplicationManager.getApplication().invokeLater {
-    updateUI(data)
-}
-```
+When editing MR state behavior:
 
-### 2. Disposable Pattern
-
-Both `GitLabApiClient` and `GitLabToolWindowContent` implement `Disposable`. Always clean up coroutine scopes in `dispose()`:
-
-```kotlin
-override fun dispose() {
-    coroutineScope.cancel()
-}
-```
-
-### 3. Project Path Encoding
-
-Always URL-encode project paths containing slashes:
-
-```kotlin
-import java.net.URLEncoder
-val encodedPath = URLEncoder.encode(path, "UTF-8")
-```
-
-### 4. Authentication Fallback
-
-`testConnection()` tries both URL parameter and header methods. Header method is more reliable for self-hosted instances.
-
-### 5. Error Handling
-
-API errors return `GitLabApiResponse` with `success=false`. Network exceptions should be caught and converted to error responses.
-
-### 6. Git4Idea Dependency
-
-Marked optional in `plugin.xml`. Plugin works without Git integration, but features like remote URL extraction will be limited.
+- Check both `MergeRequestState` in `model/GitLabServer.kt` and the DTO mapping in `GitLabApiClient`.
+- Check enable/disable rules in `MRActionToolbar`.
 
 ---
 
-## Code Style Guidelines
+## Recommended Manual Test Pass
 
-### Kotlin Style
-- Follow Kotlin coding conventions
-- Use official Kotlin code style (`kotlin.code.style=official` in gradle.properties)
-- Prefer immutable data classes (`val` over `var`)
-- Use Kotlin coroutines for async operations
+If build/run becomes possible, validate at least these cases:
 
-### Naming Conventions
-- Classes: PascalCase
-- Functions/Variables: camelCase
-- Constants: UPPER_SNAKE_CASE
-- Package: `com.gitlab.idea.*`
-
-### UI Code
-- Use IntelliJ Platform UI components (JBPanel, JBLabel, etc.)
-- Follow IDEA's visual design guidelines
-- Support both Light and Dark themes
+- add a default server from the tool window
+- add a project-scoped server
+- load MRs from a project with exactly one Git repo
+- filter by state, scope, and title keyword
+- open MR details and open in browser
+- create MR with preloaded branches/members
+- use "merge current branch"
+- close, merge, and delete an MR
+- verify behavior on invalid token
+- verify behavior on project with zero repos
+- verify behavior on project with multiple repos
 
 ---
 
-## Testing Instructions
+## Files Worth Reading First
 
-### Manual Testing Steps
-
-1. **Create GitLab Access Token:**
-   - Go to GitLab → Settings → Access Tokens
-   - Scopes needed: `api`, `read_api`, `read_repository`, `read_milestone`, `read_issue`, `read_merge_request`
-
-2. **Configure Plugin in Sandbox:**
-   - Run plugin (creates sandbox IDEA)
-   - Open any project
-   - View → Tool Windows → GitLab
-   - Click "+" to add server
-   - Enter GitLab URL and token
-   - Test connection
-
-3. **Verify Functionality:**
-   - MR list loads automatically
-   - State filters work
-   - Username filter works
-   - Click MR to see details
-   - Refresh button works
-
-### Common Test Scenarios
-
-- Self-hosted GitLab instance
-- GitLab.com
-- Project with many MRs (pagination)
-- No Git repository in project
-- Invalid/expired token
-- Network disconnection
+- `build.gradle.kts`
+- `src/main/resources/META-INF/plugin.xml`
+- `src/main/kotlin/com/gitlab/idea/toolwindow/GitLabToolWindowContent.kt`
+- `src/main/kotlin/com/gitlab/idea/api/GitLabApiClient.kt`
+- `src/main/kotlin/com/gitlab/idea/config/GitLabConfigService.kt`
+- `src/main/kotlin/com/gitlab/idea/config/GitLabProjectConfigService.kt`
+- `src/main/kotlin/com/gitlab/idea/util/GitUtil.kt`
 
 ---
 
-## Security Considerations
+## Last Updated
 
-1. **Token Storage:** API tokens are stored in IDEA's secure storage via `PersistentStateComponent`. Never log tokens.
-
-2. **HTTPS Only:** Always use HTTPS URLs for production GitLab instances.
-
-3. **Token Scope:** Document minimum required scopes for API tokens.
-
-4. **No Token in Logs:** Ensure API tokens are not included in error messages or logs.
-
----
-
-## Troubleshooting
-
-### Build Issues
-
-| Problem | Solution |
-|---------|----------|
-| Gradle sync fails | Check JDK 17 is set in Project Structure |
-| Dependencies not found | Check network connection, consider adding Maven mirrors |
-| Build fails with memory error | Increase heap size in `gradle.properties`: `org.gradle.jvmargs=-Xmx2048m` |
-
-### Runtime Issues
-
-| Problem | Solution |
-|---------|----------|
-| Plugin not loading | Check IDEA version >= 2024.2, check `Help → Show Log` |
-| Connection fails | Verify URL format (no trailing slash), check token permissions |
-| MRs not loading | Check Git remote URL points to GitLab, verify project access |
-| UI looks wrong | Check theme compatibility, clear IDEA caches |
-
----
-
-## Documentation Files
-
-| File | Purpose |
-|------|---------|
-| `README.md` | User-facing documentation (中文) |
-| `DEVELOPMENT.md` | Detailed development guide (中文) |
-| `QUICKSTART.md` | Quick start guide (中文) |
-| `PROJECT_SUMMARY.md` | Project status and roadmap (中文) |
-| `CLAUDE.md` | Claude Code specific guidance (English) |
-| `AGENTS.md` | This file - AI agent guidance |
-
----
-
-## Related Resources
-
-- [IntelliJ Platform SDK Docs](https://plugins.jetbrains.com/docs/intellij/)
-- [GitLab REST API Docs](https://docs.gitlab.com/ee/api/)
-- [Kotlin Coding Conventions](https://kotlinlang.org/docs/coding-conventions.html)
-
----
-
-**Last Updated:** 2026-02-27
+- Date: `2026-03-27`
+- Basis: direct scan of repository files plus attempted local build execution
