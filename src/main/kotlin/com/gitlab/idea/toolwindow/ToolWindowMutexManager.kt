@@ -3,22 +3,20 @@ package com.gitlab.idea.toolwindow
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
+import com.intellij.openapi.wm.ToolWindowAnchor
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import com.intellij.util.messages.MessageBusConnection
 
 /**
  * 工具窗口互斥管理器
- * 确保 GitLab 工具窗口与其他工具窗口互斥显示
+ * 仅在底部工具窗口区域内保持互斥，避免影响侧边栏窗口。
  */
 class ToolWindowMutexManager(private val project: Project) : Disposable {
 
     companion object {
         private const val GITLAB_TOOL_WINDOW_ID = "GitLab"
 
-        /**
-         * 获取或创建管理器实例
-         */
         fun getInstance(project: Project): ToolWindowMutexManager {
             return ToolWindowMutexManager(project)
         }
@@ -29,7 +27,6 @@ class ToolWindowMutexManager(private val project: Project) : Disposable {
     private var isProcessing = false
 
     init {
-        // 订阅工具窗口状态变化监听器
         connection.subscribe(ToolWindowManagerListener.TOPIC, object : ToolWindowManagerListener {
             override fun toolWindowShown(toolWindow: ToolWindow) {
                 handleToolWindowShown(toolWindow)
@@ -37,21 +34,17 @@ class ToolWindowMutexManager(private val project: Project) : Disposable {
         })
     }
 
-    /**
-     * 处理工具窗口显示事件
-     */
     private fun handleToolWindowShown(toolWindow: ToolWindow) {
         if (isProcessing) return
         isProcessing = true
 
         try {
             val toolWindowId = toolWindow.id
+            val toolWindowAnchor = toolWindow.anchor
 
             if (toolWindowId == GITLAB_TOOL_WINDOW_ID) {
-                // GitLab 工具窗口显示时，关闭其他工具窗口
-                closeOtherToolWindows()
-            } else {
-                // 其他工具窗口显示时，关闭 GitLab 工具窗口
+                closeBottomToolWindowsExceptGitLab()
+            } else if (toolWindowAnchor == ToolWindowAnchor.BOTTOM) {
                 closeGitLabToolWindow()
             }
         } finally {
@@ -59,23 +52,17 @@ class ToolWindowMutexManager(private val project: Project) : Disposable {
         }
     }
 
-    /**
-     * 关闭除 GitLab 外的所有工具窗口
-     */
-    private fun closeOtherToolWindows() {
+    private fun closeBottomToolWindowsExceptGitLab() {
         toolWindowManager.toolWindowIds.forEach { id ->
             if (id != GITLAB_TOOL_WINDOW_ID) {
-                val tw = toolWindowManager.getToolWindow(id)
-                if (tw != null && tw.isVisible) {
-                    tw.hide()
+                val toolWindow = toolWindowManager.getToolWindow(id)
+                if (toolWindow != null && toolWindow.isVisible && toolWindow.anchor == ToolWindowAnchor.BOTTOM) {
+                    toolWindow.hide()
                 }
             }
         }
     }
 
-    /**
-     * 关闭 GitLab 工具具窗口
-     */
     private fun closeGitLabToolWindow() {
         val gitLabToolWindow = toolWindowManager.getToolWindow(GITLAB_TOOL_WINDOW_ID) ?: return
         if (gitLabToolWindow.isVisible) {
