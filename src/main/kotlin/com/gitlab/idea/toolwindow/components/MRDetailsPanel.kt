@@ -100,6 +100,9 @@ class MRDetailsPanel : JPanel() {
 
         // 默认选中详情标签
         tabbedPane.selectedIndex = 0
+        tabbedPane.addChangeListener {
+            updateChangeTabActionsVisibility()
+        }
 
         // 外层卡片面板添加空状态和标签栏
         outerCardPanel.add(emptyStateOuterPanel, "EMPTY")
@@ -109,6 +112,7 @@ class MRDetailsPanel : JPanel() {
         add(outerCardPanel, BorderLayout.CENTER)
 
         setupUI()
+        bindToolbarActions()
     }
 
     private fun setupUI() {
@@ -283,6 +287,24 @@ class MRDetailsPanel : JPanel() {
     /**
      * 强制文本区重新布局
      */
+    private fun bindToolbarActions() {
+        actionToolbar.onExpandAllChangesClicked = {
+            changesTreePanel.expandAllChanges()
+        }
+        actionToolbar.onCollapseAllChangesClicked = {
+            changesTreePanel.collapseToModules()
+        }
+        updateChangeTabActionsVisibility()
+    }
+
+    private fun updateChangeTabActionsVisibility() {
+        actionToolbar.setChangeActionsVisible(
+            actionToolbar.isVisible && tabbedPane.selectedComponent === changesTreePanel
+        )
+        actionToolbar.revalidate()
+        actionToolbar.repaint()
+    }
+
     private fun forceTextAreasRelayout() {
         // 重新设置文本会触发 JTextArea 重新计算换行
         // 先失效，然后重新验证
@@ -406,6 +428,8 @@ class MRDetailsPanel : JPanel() {
         }
 
         tabbedPane.selectedIndex = 0
+        actionToolbar.updateButtonStates(mr)
+        updateChangeTabActionsVisibility()
         // 更新工具栏按钮状态
         actionToolbar.updateButtonStates(mr)
     }
@@ -435,6 +459,7 @@ class MRDetailsPanel : JPanel() {
      */
     fun clear() {
         currentMR = null
+        actionToolbar.isVisible = false
 
         // 隐藏工具栏，显示外层空状态
         actionToolbar.isVisible = false
@@ -444,6 +469,7 @@ class MRDetailsPanel : JPanel() {
 
         // 清空工具栏按钮状态
         actionToolbar.updateButtonStates(null)
+        updateChangeTabActionsVisibility()
     }
 
     fun setOnCloseMR(callback: (GitLabMergeRequest) -> Unit) {

@@ -100,6 +100,22 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
         cardLayout.show(cardPanel, "TREE")
     }
 
+    fun expandAllChanges() {
+        if (treeRoot.childCount == 0) return
+        expandAll()
+        cardLayout.show(cardPanel, "TREE")
+    }
+
+    fun collapseToModules() {
+        if (treeRoot.childCount == 0) return
+
+        for (row in changesTree.rowCount - 1 downTo 0) {
+            changesTree.collapseRow(row)
+        }
+
+        cardLayout.show(cardPanel, "TREE")
+    }
+
     private fun rebuildTree(changes: List<GitLabMergeRequestChangeFile>) {
         treeRoot.removeAllChildren()
 

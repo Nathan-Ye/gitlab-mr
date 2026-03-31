@@ -25,26 +25,41 @@ class MRActionToolbar : JPanel() {
     var onCloseMRClicked: ((GitLabMergeRequest) -> Unit)? = null
     var onMergeMRClicked: ((GitLabMergeRequest) -> Unit)? = null
     var onDeleteMRClicked: ((GitLabMergeRequest) -> Unit)? = null
+    var onExpandAllChangesClicked: (() -> Unit)? = null
+    var onCollapseAllChangesClicked: (() -> Unit)? = null
     var currentServerUrl: String? = null
 
     private var currentMR: GitLabMergeRequest? = null
+    private var changeActionsVisible: Boolean = false
 
     init {
         layout = BorderLayout()
         background = UIUtil.getPanelBackground()
         border = JBUI.Borders.empty(8, 8, 0, 8) // top, left, bottom, right
 
-        val actionGroup = DefaultActionGroup()
-        actionList.forEach { actionGroup.addAction(it) }
+        val leftActionGroup = DefaultActionGroup()
+        actionList.forEach { leftActionGroup.addAction(it) }
 
-        val toolbar = ActionManager.getInstance().createActionToolbar(
+        val leftToolbar = ActionManager.getInstance().createActionToolbar(
             "GitLabMRActionToolbar",
-            actionGroup,
+            leftActionGroup,
             true // horizontal = true
         )
-        toolbar.targetComponent = null
+        leftToolbar.targetComponent = null
 
-        add(toolbar.component, BorderLayout.WEST)
+        val rightActionGroup = DefaultActionGroup().apply {
+            addAction(ExpandAllChangesAction())
+            addAction(CollapseAllChangesAction())
+        }
+        val rightToolbar = ActionManager.getInstance().createActionToolbar(
+            "GitLabMRChangesToolbar",
+            rightActionGroup,
+            true
+        )
+        rightToolbar.targetComponent = null
+
+        add(leftToolbar.component, BorderLayout.WEST)
+        add(rightToolbar.component, BorderLayout.EAST)
     }
 
     private val actionList: List<AnAction>
@@ -61,6 +76,10 @@ class MRActionToolbar : JPanel() {
      */
     fun updateButtonStates(mr: GitLabMergeRequest?) {
         currentMR = mr
+    }
+
+    fun setChangeActionsVisible(visible: Boolean) {
+        changeActionsVisible = visible
     }
 
     /**
@@ -139,7 +158,7 @@ class MRActionToolbar : JPanel() {
             currentMR?.let { mr ->
                 val serverUrl = currentServerUrl
                 val webUrl = mr.webUrl
-                if (serverUrl != null && serverUrl.isNotEmpty() && webUrl.isNotEmpty()) {
+                if (!serverUrl.isNullOrEmpty() && webUrl.isNotEmpty()) {
                     try {
                         // 使用 URI 解析，避免使用已弃用的 URL 构造函数
                         val serverUri = URI(serverUrl)
@@ -166,6 +185,40 @@ class MRActionToolbar : JPanel() {
         override fun update(e: AnActionEvent) {
             val mr = currentMR
             e.presentation.isEnabled = mr != null && currentServerUrl != null && mr.webUrl.isNotEmpty()
+        }
+    }
+
+    private inner class ExpandAllChangesAction : AnAction(
+        "",
+        "全部展开",
+        AllIcons.Actions.Expandall
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) {
+            onExpandAllChangesClicked?.invoke()
+        }
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isVisible = changeActionsVisible
+            e.presentation.isEnabled = changeActionsVisible
+        }
+    }
+
+    private inner class CollapseAllChangesAction : AnAction(
+        "",
+        "全部收起",
+        AllIcons.Actions.Collapseall
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) {
+            onCollapseAllChangesClicked?.invoke()
+        }
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isVisible = changeActionsVisible
+            e.presentation.isEnabled = changeActionsVisible
         }
     }
 }
