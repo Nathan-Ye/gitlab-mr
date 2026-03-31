@@ -14,17 +14,16 @@
     ]]></description>
 
     <change-notes><![CDATA[
-        <h3>Version 1.0.4</h3>
+        <h3>Version 2.0.0</h3>
         <ul>
-            <li>Initial release</li>
-            <li>View GitLab Merge Requests</li>
-            <li>Filter by status and user</li>
-            <li>MR details panel</li>
+            <li>Add MR changed-file tree view in the details panel</li>
+            <li>Add native IntelliJ Diff support for MR changed files</li>
+            <li>Add expand-all and collapse-to-module actions on the change tab</li>
         </ul>
     ]]></change-notes>
 
     <!-- Please see https://plugins.jetbrains.com/docs/intellij/build-number-ranges.html -->
-    <idea-version since-build="241" until-build="251.*"/>
+    <idea-version since-build="241" until-build="253.*"/>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lang</depends>

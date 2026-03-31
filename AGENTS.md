@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file gives coding agents a current, repo-specific map of the project. It is intended to be more accurate than older docs when they disagree.
+This file is the current repo-specific map for coding agents working in `gitlab-mr`.
 
 ---
 
@@ -9,18 +9,18 @@ This file gives coding agents a current, repo-specific map of the project. It is
 - Project type: IntelliJ IDEA plugin
 - Plugin name: `GitLab MR`
 - Plugin ID: `com.gitlab.idea.integration`
-- Current Gradle project version: `1.0.3`
+- Current Gradle project version: `2.0.0`
 - Main language: Kotlin
 - Target JVM: Java 17
 - Primary purpose: view and operate GitLab Merge Requests inside the IDE tool window
 
-The UI text and product copy are primarily Chinese. Some source files appear garbled when viewed in a terminal because of encoding/display issues; do not assume the source itself is broken until verified in IDEA.
+UI text is primarily Chinese. Some files may render as garbled text in a terminal because of encoding/display differences; do not assume source corruption until verified in IDEA.
 
 ---
 
 ## Verified Stack
 
-From `build.gradle.kts` and `gradle.properties`:
+From `build.gradle.kts`, `gradle.properties`, and local build execution:
 
 - Kotlin: `2.1.0`
 - IntelliJ Platform Gradle Plugin: `2.11.0`
@@ -28,14 +28,12 @@ From `build.gradle.kts` and `gradle.properties`:
 - Gson: `2.10.1`
 - OkHttp: `4.12.0`
 - Bundled plugin: `Git4Idea`
-- Gradle distribution in wrapper properties: `8.13`
+- Gradle wrapper distribution: `8.13`
 
-Important compatibility detail:
+Compatibility metadata is now aligned:
 
 - `build.gradle.kts` sets `untilBuild` to `253.*`
-- `src/main/resources/META-INF/plugin.xml` currently declares `until-build="251.*"`
-
-If you touch compatibility metadata, update both places or decide which one is the source of truth and align them.
+- `src/main/resources/META-INF/plugin.xml` should match `until-build="253.*"`
 
 ---
 
@@ -57,27 +55,34 @@ Notable Kotlin modules:
   - all REST calls
   - auth fallback logic
   - DTO to model mapping
+  - MR change list loading
+  - repository file content loading
+- `api/MRDiffContentLoader.kt`
+  - resolves before / after content for MR diffs
 - `config/`
   - application-level and project-level persistent config
   - settings UI
 - `model/GitLabServer.kt`
-  - all core models live here, not just server models
-- `toolwindow/`
-  - tool window factory
-  - main card-layout content controller
-  - server dialog
-  - create MR dialog
-  - confirmation dialog for destructive MR actions
-- `toolwindow/components/`
-  - empty/loading/error panels
-  - MR list
-  - MR details
-  - toolbars
+  - core models, including MR, changed files, diff refs, diff payloads
+- `toolwindow/GitLabToolWindowContent.kt`
+  - top-level coordinator
+  - MR selection, change loading, diff opening
+- `toolwindow/MRDiffService.kt`
+  - integrates with IntelliJ native diff viewer
+- `toolwindow/components/MRChangesTreePanel.kt`
+  - MR changed file tree
+  - expand / collapse helpers
+- `toolwindow/components/MRDetailsPanel.kt`
+  - MR details tabs
+  - change tab toolbar visibility and actions
+- `toolwindow/components/MRActionToolbar.kt`
+  - MR action buttons
+  - change-tree expand / collapse actions
 - `util/`
   - Git helpers
   - notification helpers
 
-There is no `src/test` tree at the moment.
+There is still no `src/test` tree.
 
 ---
 
@@ -96,7 +101,7 @@ There is no `src/test` tree at the moment.
 
 ### Tool window flow
 
-`GitLabToolWindowContent` is the real coordinator.
+`GitLabToolWindowContent` is the main coordinator.
 
 It maintains four card states:
 
@@ -105,7 +110,7 @@ It maintains four card states:
 - loading
 - main
 
-Initialization flow today:
+Initialization flow:
 
 1. Read project-level selected server first.
 2. Else use app-level selected server or first default server.
@@ -114,34 +119,32 @@ Initialization flow today:
 
 ### Project detection flow
 
-The current implementation is narrower than older docs suggest.
-
-`loadData(server)` does this:
+`loadData(server)` currently does this:
 
 1. Create `GitLabApiClient`.
 2. Call `GitUtil.getMainRepository(project)`.
-3. This only returns a repository when the project has exactly one Git repo.
+3. This only succeeds when the project has exactly one Git repo.
 4. Read the `origin` remote URL.
-5. Extract GitLab project path from remote URL.
+5. Extract the GitLab project path from that remote.
 6. Call `apiClient.getProject(projectPath)`.
 7. Load page 1 of merge requests.
 
 Current fallback behavior:
 
-- There is no implemented fallback to "configured project path".
-- There is no implemented fallback to "user's first accessible project".
+- No implemented fallback to a configured project path.
+- No implemented fallback to “first accessible project”.
 - Multi-repo projects currently degrade to an error because `getMainRepository()` returns `null` unless there is exactly one repo.
 
-If you change project resolution, update this document and the user docs.
+If project resolution changes, update this document and user-facing docs.
 
 ---
 
 ## Supported MR Features
 
-Verified from `GitLabToolWindowContent`, `MRListPanel`, `MRDetailsPanel`, `MRActionToolbar`, and `CreateMRDialog`:
+Verified from `GitLabToolWindowContent`, `MRListPanel`, `MRDetailsPanel`, `MRActionToolbar`, `MRChangesTreePanel`, and `CreateMRDialog`:
 
 - MR list loading with server-side pagination
-- Infinite scroll style "load more"
+- Infinite scroll style load-more
 - State filter: `OPENED`, `CLOSED`, `LOCKED`, `MERGED`
 - Scope filter: all, created by me, assigned to me
 - Title keyword search
@@ -153,20 +156,29 @@ Verified from `GitLabToolWindowContent`, `MRListPanel`, `MRDetailsPanel`, `MRAct
 - Create MR
 - Optional remove-source-branch when creating or merging
 - Prefill MR title/description from latest commit on selected source branch
-- "merge current branch" helper in create dialog
+- “merge current branch” helper in create dialog
 - Preload branches and members before opening the create dialog
+- “变更” tab for MR changed files
+- Changed-file tree grouped by module
+- Double-click changed file to open IntelliJ native Diff
+- Diff support for `ADDED`, `MODIFIED`, `DELETED`, `RENAMED`
+- Toolbar actions on the “变更” tab:
+  - expand all
+  - collapse to module level only
 
-Behavior detail:
+Behavior details:
 
-- `LOCKED` is not a direct GitLab state mapping. The client maps `OPENED + has_conflicts=true` to `MergeRequestState.LOCKED`.
-- Delete is enabled only for `OPENED` and `CLOSED` in the toolbar logic.
+- `LOCKED` is not a direct GitLab state. The client maps `OPENED + has_conflicts=true` to `MergeRequestState.LOCKED`.
+- Delete is enabled only for `OPENED` and `CLOSED`.
 - Merge and close are enabled only for `OPENED`.
+- Expand/collapse actions are visible only while the “变更” tab is active.
+- Collapse should leave only module nodes visible.
 
 ---
 
 ## API Layer Notes
 
-`GitLabApiClient` is the single integration point.
+`GitLabApiClient` is still the single integration point.
 
 Implemented endpoint groups:
 
@@ -175,7 +187,9 @@ Implemented endpoint groups:
 - `/projects/:id`
 - `/projects/:id/merge_requests`
 - `/projects/:id/merge_requests/:iid`
+- `/projects/:id/merge_requests/:iid/changes`
 - `/projects/:id/merge_requests/:iid/merge`
+- `/projects/:id/repository/files/:path/raw`
 - `/projects/:id/repository/branches`
 - `/projects/:id/members/all`
 
@@ -185,13 +199,12 @@ Auth behavior:
 - Some methods also send `PRIVATE-TOKEN`
 - `testConnection()` and `getCurrentUser()` explicitly try URL auth first, then header auth
 
-Implementation caveat:
+Implementation notes:
 
-- `apiBaseUrl` is built from `server.url` directly
-- `normalizeUrl()` exists but is not used
-- if a stored server URL ends with `/`, requests can become `...//api/v4`
-- `GitLabServerDialog.parseServerUrl()` currently normalizes host/protocol, so dialog-created servers are usually safe
-- manually edited config through `GitLabConfigurable` can still store unnormalized URLs
+- `apiBaseUrl` now normalizes `server.url` before composing `/api/v4`
+- `encodeProjectId()` is used where numeric IDs and path IDs both need support
+- Repository file content loading includes basic UTF-8 decode and text/binary detection
+- Final binary handling for diffs is based on loaded file content, not just MR patch metadata
 
 ---
 
@@ -207,16 +220,16 @@ Storage files:
 - `GitLabConfig.xml`
 - `GitLabProjectConfig.xml`
 
-Behavior differences matter:
+Behavior differences:
 
 - `GitLabConfigService.addServer()` only persists servers where `isDefault == true`
-- `GitLabProjectConfigService.addServer()` stores non-default/project-scoped servers
+- `GitLabProjectConfigService.addServer()` stores non-default / project-scoped servers
 - both services dedupe by `url`, not by `id`
 
 Practical consequence:
 
 - the add/edit server flow in the tool window is the main path that correctly routes servers to app or project storage
-- `GitLabConfigurable` is less aligned with that model and may surprise you if you extend it without reading service logic first
+- `GitLabConfigurable` is less aligned with that model and should be extended carefully
 
 ---
 
@@ -230,32 +243,30 @@ gradlew.bat clean
 verify.bat
 ```
 
-Current repository issue:
+Current verified state:
 
-- `gradle/wrapper/gradle-wrapper.properties` exists
-- `gradle/wrapper/gradle-wrapper.jar` is missing
-- `./gradlew.bat buildPlugin` currently fails with `ClassNotFoundException: org.gradle.wrapper.GradleWrapperMain`
+- `./gradlew.bat buildPlugin` succeeds in this repository
+- Local verification basis includes successful builds on `2026-03-31`
 
-That means agents cannot rely on the checked-in wrapper as-is. Before promising build verification, either:
+Important caveat:
 
-- restore `gradle-wrapper.jar`, or
-- use a separately installed Gradle if available and acceptable
-
-Do not describe the wrapper build as verified unless you have fixed that first.
+- `buildPlugin` may emit IntelliJ/Gradle warnings during `buildSearchableOptions`
+- treat compile success and produced plugin artifact as the actual verification signal unless the warnings indicate a direct regression in touched code
 
 ---
 
 ## Known Documentation Drift
 
-Older docs in the repo may be stale. Verified mismatches include:
+Older prose docs may still be stale. Verified mismatches that should no longer be repeated:
 
-- project version is `1.0.3`, not `1.0.0`
-- plugin XML change notes say "Version 1.0.3" but still describe an initial release
-- `plugin.xml` and Gradle `patchPluginXml` disagree on `untilBuild`
-- old docs mention broader project loading fallbacks that are not implemented now
-- old docs imply Linux/macOS wrapper usage, but only `gradlew.bat` is present in the repo
+- old versions such as `1.0.0`, `1.0.3`, or `1.0.4`
+- old statements that file diff is not supported
+- old statements that change-tree expand/collapse is not supported
+- old statements that `apiBaseUrl` uses raw `server.url` without normalization
+- old statements that the Gradle wrapper is unusable because of a missing wrapper jar
+- old compatibility notes that mention `plugin.xml` and Gradle disagreeing on `untilBuild`
 
-Treat `build.gradle.kts`, `plugin.xml`, and the Kotlin source as authoritative over prose docs.
+Treat `build.gradle.kts`, `plugin.xml`, and current Kotlin source as authoritative over older prose.
 
 ---
 
@@ -271,7 +282,8 @@ When editing UI code:
 
 - Prefer IntelliJ platform Swing components already used in the repo.
 - Keep light/dark theme compatibility.
-- Preserve current action toolbar patterns unless there is a clear reason to refactor.
+- Preserve current toolbar/action patterns unless there is a clear reason to refactor.
+- If touching the changed-file tree UX, verify both default-expanded and collapsed-to-module behaviors.
 
 When editing async code:
 
@@ -283,16 +295,18 @@ When editing Git-related behavior:
 - Read `util/GitUtil.kt` first.
 - Be careful with the single-repository assumption in `getMainRepository()`.
 
-When editing MR state behavior:
+When editing MR state or diff behavior:
 
-- Check both `MergeRequestState` in `model/GitLabServer.kt` and the DTO mapping in `GitLabApiClient`.
+- Check `MergeRequestState` in `model/GitLabServer.kt`.
+- Check DTO mapping in `GitLabApiClient`.
 - Check enable/disable rules in `MRActionToolbar`.
+- Check diff content resolution in `MRDiffContentLoader`.
 
 ---
 
 ## Recommended Manual Test Pass
 
-If build/run becomes possible, validate at least these cases:
+If running the plugin in an IDE sandbox, validate at least:
 
 - add a default server from the tool window
 - add a project-scoped server
@@ -300,8 +314,13 @@ If build/run becomes possible, validate at least these cases:
 - filter by state, scope, and title keyword
 - open MR details and open in browser
 - create MR with preloaded branches/members
-- use "merge current branch"
+- use “merge current branch”
 - close, merge, and delete an MR
+- load the “变更” tab
+- double-click a changed text file and verify native Diff opens
+- verify added / modified / deleted / renamed file cases
+- verify “全部展开”
+- verify “全部收起” leaves only module nodes visible
 - verify behavior on invalid token
 - verify behavior on project with zero repos
 - verify behavior on project with multiple repos
@@ -314,13 +333,15 @@ If build/run becomes possible, validate at least these cases:
 - `src/main/resources/META-INF/plugin.xml`
 - `src/main/kotlin/com/gitlab/idea/toolwindow/GitLabToolWindowContent.kt`
 - `src/main/kotlin/com/gitlab/idea/api/GitLabApiClient.kt`
-- `src/main/kotlin/com/gitlab/idea/config/GitLabConfigService.kt`
-- `src/main/kotlin/com/gitlab/idea/config/GitLabProjectConfigService.kt`
+- `src/main/kotlin/com/gitlab/idea/api/MRDiffContentLoader.kt`
+- `src/main/kotlin/com/gitlab/idea/toolwindow/MRDiffService.kt`
+- `src/main/kotlin/com/gitlab/idea/toolwindow/components/MRActionToolbar.kt`
+- `src/main/kotlin/com/gitlab/idea/toolwindow/components/MRChangesTreePanel.kt`
 - `src/main/kotlin/com/gitlab/idea/util/GitUtil.kt`
 
 ---
 
 ## Last Updated
 
-- Date: `2026-03-27`
-- Basis: direct scan of repository files plus attempted local build execution
+- Date: `2026-03-31`
+- Basis: direct scan of repository files, review of the latest three commits, and successful local `./gradlew.bat buildPlugin`
