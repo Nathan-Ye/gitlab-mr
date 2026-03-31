@@ -122,6 +122,19 @@ data class GitLabMergeRequest(
     val forceRemoveSourceBranch: Boolean = false
 )
 
+enum class GitLabMergeRequestChangeType {
+    ADDED,
+    MODIFIED,
+    DELETED,
+    RENAMED
+}
+
+data class GitLabMergeRequestChangeFile(
+    val path: String,
+    val oldPath: String? = null,
+    val changeType: GitLabMergeRequestChangeType = GitLabMergeRequestChangeType.MODIFIED
+)
+
 /**
  * GitLab用户信息
  */

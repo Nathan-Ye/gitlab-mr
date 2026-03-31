@@ -1,6 +1,7 @@
 package com.gitlab.idea.toolwindow.components
 
 import com.gitlab.idea.model.GitLabMergeRequest
+import com.gitlab.idea.model.GitLabMergeRequestChangeFile
 import com.gitlab.idea.model.MergeRequestState
 import com.intellij.ui.JBColor
 import com.intellij.ui.TitledSeparator
@@ -57,6 +58,7 @@ class MRDetailsPanel : JPanel() {
     private val outerCardPanel = JPanel(outerCardLayout)
     private val emptyStateOuterPanel = JPanel()
     private val tabbedPane: JTabbedPane
+    private val changesTreePanel = MRChangesTreePanel()
 
     init {
         layout = BorderLayout()
@@ -92,19 +94,9 @@ class MRDetailsPanel : JPanel() {
         tabbedPane = JTabbedPane(JTabbedPane.BOTTOM)
         tabbedPane.background = UIUtil.getPanelBackground()
 
-        // 详情标签页 - 使用 centerCardPanel
-        // 提交标签页 - 暂时为空
-        val commitsTabPanel = JPanel(BorderLayout())
-        val commitsEmptyLabel = JLabel("提交记录加载中...")
-        commitsEmptyLabel.font = commitsEmptyLabel.font.deriveFont(Font.PLAIN, 14f)
-        commitsEmptyLabel.foreground = JBColor.GRAY
-        commitsEmptyLabel.horizontalAlignment = SwingConstants.CENTER
-        commitsEmptyLabel.verticalAlignment = SwingConstants.CENTER
-        commitsTabPanel.add(commitsEmptyLabel, BorderLayout.CENTER)
-
         // 添加标签页
         tabbedPane.addTab("详情", centerCardPanel)
-        tabbedPane.addTab("提交", commitsTabPanel)
+        tabbedPane.addTab("提交", changesTreePanel)
 
         // 默认选中详情标签
         tabbedPane.selectedIndex = 0
@@ -413,8 +405,25 @@ class MRDetailsPanel : JPanel() {
             scrollPane.verticalScrollBar.value = 0
         }
 
+        tabbedPane.selectedIndex = 0
         // 更新工具栏按钮状态
         actionToolbar.updateButtonStates(mr)
+    }
+
+    fun setMergeRequestChangesLoading() {
+        changesTreePanel.showLoading()
+    }
+
+    fun setMergeRequestChanges(changes: List<GitLabMergeRequestChangeFile>) {
+        changesTreePanel.setChanges(changes)
+    }
+
+    fun setMergeRequestChangesError(message: String?) {
+        changesTreePanel.showError(message ?: "改动文件加载失败")
+    }
+
+    fun setOnChangedFileSelected(callback: (GitLabMergeRequestChangeFile) -> Unit) {
+        changesTreePanel.onFileSelected = callback
     }
 
     /**
@@ -426,6 +435,8 @@ class MRDetailsPanel : JPanel() {
         // 隐藏工具栏，显示外层空状态
         actionToolbar.isVisible = false
         outerCardLayout.show(outerCardPanel, "EMPTY")
+        changesTreePanel.showEmpty("请选择一个合并请求查看改动文件")
+        tabbedPane.selectedIndex = 0
 
         // 清空工具栏按钮状态
         actionToolbar.updateButtonStates(null)

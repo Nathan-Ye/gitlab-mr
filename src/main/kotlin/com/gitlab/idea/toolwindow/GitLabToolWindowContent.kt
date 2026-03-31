@@ -58,6 +58,8 @@ class GitLabToolWindowContent(
     private var isLoadingMore: Boolean = false
     private var currentApiClient: GitLabApiClient? = null
     private var currentProjectId: String? = null
+    private var mergeRequestChangesJob: Job? = null
+    private var selectedMergeRequestIid: Long? = null
 
     // 筛选条件
     private var filterState: MergeRequestState? = null
@@ -691,6 +693,8 @@ class GitLabToolWindowContent(
             // 设置当前服务器 URL，用于"在GitLab中打开"功能
             mrDetailsPanel.setCurrentServerUrl(currentServer?.url)
             mrDetailsPanel.setMergeRequest(mr)
+            selectedMergeRequestIid = mr.iid
+            loadMergeRequestChanges(mr)
         }
 
         fun updateLoadMoreStatus(hasMore: Boolean) {
@@ -862,6 +866,9 @@ class GitLabToolWindowContent(
                 mrListPanel.updateMergeRequest(updatedMR)
                 // 更新详情面板
                 mrDetailsPanel.setMergeRequest(updatedMR)
+                mrDetailsPanel.setCurrentServerUrl(currentServer?.url)
+                selectedMergeRequestIid = updatedMR.iid
+                loadMergeRequestChanges(updatedMR)
             }
         }
 
@@ -874,6 +881,37 @@ class GitLabToolWindowContent(
             filteredMergeRequests = filteredMergeRequests.filter { it.iid != mr.iid }
             // 从列表 UI 中移除
             mrListPanel.removeMergeRequest(mr.iid)
+        }
+
+        private fun loadMergeRequestChanges(mr: GitLabMergeRequest) {
+            val apiClient = currentApiClient ?: return
+            val projectId = currentProjectId ?: return
+
+            mergeRequestChangesJob?.cancel()
+            mrDetailsPanel.setMergeRequestChangesLoading()
+
+            mergeRequestChangesJob = launch {
+                try {
+                    val response = apiClient.getMergeRequestChanges(projectId, mr.iid)
+                    ApplicationManager.getApplication().invokeLater {
+                        if (selectedMergeRequestIid != mr.iid) return@invokeLater
+
+                        if (response.success && response.data != null) {
+                            mrDetailsPanel.setMergeRequestChanges(response.data)
+                        } else {
+                            mrDetailsPanel.setMergeRequestChangesError(response.error)
+                        }
+                    }
+                } catch (_: CancellationException) {
+                    // Ignore stale requests when selection changes.
+                } catch (e: Exception) {
+                    ApplicationManager.getApplication().invokeLater {
+                        if (selectedMergeRequestIid == mr.iid) {
+                            mrDetailsPanel.setMergeRequestChangesError(e.message)
+                        }
+                    }
+                }
+            }
         }
     }
 }

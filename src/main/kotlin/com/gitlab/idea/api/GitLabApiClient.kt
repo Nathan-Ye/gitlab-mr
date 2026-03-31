@@ -445,6 +445,43 @@ class GitLabApiClient(
     }
 
     /**
+     * 获取单个合并请求的变更文件列表
+     */
+    suspend fun getMergeRequestChanges(
+        projectId: String,
+        mergeRequestIid: Long
+    ): GitLabApiResponse<List<GitLabMergeRequestChangeFile>> = withContext(Dispatchers.IO) {
+        try {
+            val encodedProjectId = if (projectId.all { it.isDigit() }) {
+                projectId
+            } else {
+                java.net.URLEncoder.encode(projectId, "UTF-8")
+            }
+            val url = "$apiBaseUrl/projects/$encodedProjectId/merge_requests/$mergeRequestIid/changes".withAuthToken()
+
+            val request = Request.Builder()
+                .url(url)
+                .header("Accept", "application/json")
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+
+            if (response.isSuccessful) {
+                val body = response.body?.string()
+                val changesResponse = gson.fromJson(body, MergeRequestChangesResponseDto::class.java)
+                val changedFiles = changesResponse.changes.orEmpty().map { it.toGitLabChangeFile() }
+                GitLabApiResponse(changedFiles, true, null, response.code)
+            } else {
+                val error = parseError(response.body?.string())
+                GitLabApiResponse(null, false, error, response.code)
+            }
+        } catch (e: Exception) {
+            GitLabApiResponse(null, false, e.message ?: "Unknown error", -1)
+        }
+    }
+
+    /**
      * 获取项目的所有合并请求（自动处理分页）
      */
     suspend fun getAllMergeRequests(
@@ -908,6 +945,33 @@ class GitLabApiClient(
                 downvotes = downvotes ?: 0,
                 userNotesCount = user_notes_count ?: 0,
                 forceRemoveSourceBranch = force_remove_source_branch ?: false
+            )
+        }
+    }
+
+    private data class MergeRequestChangesResponseDto(
+        val changes: List<MergeRequestChangeDto>?
+    )
+
+    private data class MergeRequestChangeDto(
+        val old_path: String?,
+        val new_path: String,
+        val new_file: Boolean?,
+        val renamed_file: Boolean?,
+        val deleted_file: Boolean?
+    ) {
+        fun toGitLabChangeFile(): GitLabMergeRequestChangeFile {
+            val changeType = when {
+                renamed_file == true -> GitLabMergeRequestChangeType.RENAMED
+                deleted_file == true -> GitLabMergeRequestChangeType.DELETED
+                new_file == true -> GitLabMergeRequestChangeType.ADDED
+                else -> GitLabMergeRequestChangeType.MODIFIED
+            }
+
+            return GitLabMergeRequestChangeFile(
+                path = new_path,
+                oldPath = old_path?.takeIf { it != new_path },
+                changeType = changeType
             )
         }
     }
