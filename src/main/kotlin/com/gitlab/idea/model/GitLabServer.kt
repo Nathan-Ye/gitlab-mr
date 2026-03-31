@@ -119,7 +119,14 @@ data class GitLabMergeRequest(
     val upvotes: Int = 0,
     val downvotes: Int = 0,
     val userNotesCount: Int = 0,
-    val forceRemoveSourceBranch: Boolean = false
+    val forceRemoveSourceBranch: Boolean = false,
+    val diffRefs: GitLabMergeRequestDiffRefs? = null
+)
+
+data class GitLabMergeRequestDiffRefs(
+    val baseSha: String?,
+    val headSha: String?,
+    val startSha: String?
 )
 
 enum class GitLabMergeRequestChangeType {
@@ -132,7 +139,27 @@ enum class GitLabMergeRequestChangeType {
 data class GitLabMergeRequestChangeFile(
     val path: String,
     val oldPath: String? = null,
-    val changeType: GitLabMergeRequestChangeType = GitLabMergeRequestChangeType.MODIFIED
+    val changeType: GitLabMergeRequestChangeType = GitLabMergeRequestChangeType.MODIFIED,
+    val diff: String? = null,
+    val oldMode: String? = null,
+    val newMode: String? = null,
+    val isBinary: Boolean = false
+)
+
+data class GitLabMergeRequestFileContent(
+    val path: String,
+    val content: String,
+    val revision: String?,
+    val isText: Boolean = true
+)
+
+data class MergeRequestDiffPayload(
+    val changeFile: GitLabMergeRequestChangeFile,
+    val beforeContent: GitLabMergeRequestFileContent?,
+    val afterContent: GitLabMergeRequestFileContent?,
+    val title: String,
+    val beforeTitle: String,
+    val afterTitle: String
 )
 
 /**

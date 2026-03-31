@@ -14,6 +14,8 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
 import java.awt.CardLayout
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.SwingConstants
@@ -33,6 +35,7 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
     private val errorLabel = createStatusLabel("改动文件加载失败")
 
     var onFileSelected: ((GitLabMergeRequestChangeFile) -> Unit)? = null
+    var onFileDoubleClicked: ((GitLabMergeRequestChangeFile) -> Unit)? = null
 
     init {
         background = UIUtil.getPanelBackground()
@@ -48,6 +51,16 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
             val fileNode = node.userObject as? FileNode ?: return@addTreeSelectionListener
             onFileSelected?.invoke(fileNode.changeFile)
         }
+        changesTree.addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                if (e.clickCount != 2 || e.button != MouseEvent.BUTTON1) return
+
+                val path = changesTree.getPathForLocation(e.x, e.y) ?: return
+                val node = path.lastPathComponent as? DefaultMutableTreeNode ?: return
+                val fileNode = node.userObject as? FileNode ?: return
+                onFileDoubleClicked?.invoke(fileNode.changeFile)
+            }
+        })
 
         val treePanel = JPanel(BorderLayout())
         treePanel.background = UIUtil.getPanelBackground()

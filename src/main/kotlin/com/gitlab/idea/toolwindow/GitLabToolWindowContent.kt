@@ -1,6 +1,7 @@
 package com.gitlab.idea.toolwindow
 
 import com.gitlab.idea.api.GitLabApiClient
+import com.gitlab.idea.api.MRDiffContentLoader
 import com.gitlab.idea.config.GitLabConfigService
 import com.gitlab.idea.config.GitLabProjectConfigService
 import com.gitlab.idea.model.*
@@ -38,6 +39,7 @@ class GitLabToolWindowContent(
 
     private val mainPanel: JPanel = JPanel(CardLayout())
     private val cardLayout: CardLayout = mainPanel.layout as CardLayout
+    private val diffService = MRDiffService(project)
 
     // 子面板
     private val emptyStatePanel: EmptyStatePanel
@@ -60,6 +62,8 @@ class GitLabToolWindowContent(
     private var currentProjectId: String? = null
     private var mergeRequestChangesJob: Job? = null
     private var selectedMergeRequestIid: Long? = null
+    private var currentSelectedMergeRequest: GitLabMergeRequest? = null
+    private var openDiffJob: Job? = null
 
     // 筛选条件
     private var filterState: MergeRequestState? = null
@@ -133,6 +137,7 @@ class GitLabToolWindowContent(
         mainContentPanel.setOnCloseMR { mr -> mainContentPanel.handleCloseMR(mr) }
         mainContentPanel.setOnMergeMR { mr -> mainContentPanel.handleMergeMR(mr) }
         mainContentPanel.setOnDeleteMR { mr -> mainContentPanel.handleDeleteMR(mr) }
+        mainContentPanel.setOnChangedFileDoubleClicked { changeFile -> openMergeRequestDiff(changeFile) }
     }
 
     /**
@@ -167,6 +172,51 @@ class GitLabToolWindowContent(
             }
             // 无服务器配置
             else -> showCard(CardState.EMPTY)
+        }
+    }
+
+    private fun openMergeRequestDiff(changeFile: GitLabMergeRequestChangeFile) {
+        val apiClient = currentApiClient ?: run {
+            GitLabNotifications.showError(project, "错误", "当前未连接到 GitLab 服务")
+            return
+        }
+        val projectId = currentProjectId ?: run {
+            GitLabNotifications.showError(project, "错误", "当前项目信息不存在")
+            return
+        }
+        val mergeRequest = currentSelectedMergeRequest ?: run {
+            GitLabNotifications.showError(project, "错误", "请先选择一个合并请求")
+            return
+        }
+
+        openDiffJob?.cancel()
+
+        openDiffJob = launch(Dispatchers.IO) {
+            try {
+                val payloadResponse = MRDiffContentLoader(apiClient)
+                    .loadDiffPayload(projectId, mergeRequest, changeFile)
+
+                if (!payloadResponse.success || payloadResponse.data == null) {
+                    ApplicationManager.getApplication().invokeLater {
+                        GitLabNotifications.showError(
+                            project,
+                            "打开差异失败",
+                            payloadResponse.error ?: "无法构建差异内容"
+                        )
+                    }
+                    return@launch
+                }
+
+                ApplicationManager.getApplication().invokeLater {
+                    diffService.showDiff(payloadResponse.data)
+                }
+            } catch (_: CancellationException) {
+                // Ignore stale open requests triggered by rapid repeated clicks.
+            } catch (e: Exception) {
+                ApplicationManager.getApplication().invokeLater {
+                    GitLabNotifications.showError(project, "打开差异失败", e.message ?: "未知错误")
+                }
+            }
         }
     }
 
@@ -617,6 +667,8 @@ class GitLabToolWindowContent(
     fun getContent(): JComponent = mainPanel
 
     override fun dispose() {
+        mergeRequestChangesJob?.cancel()
+        openDiffJob?.cancel()
         coroutineScope.cancel()
     }
 
@@ -640,6 +692,7 @@ class GitLabToolWindowContent(
         var onSettingsClicked: (() -> Unit)? = null
         var onRefreshClicked: (() -> Unit)? = null
         var onCreateMRClicked: (() -> Unit)? = null
+        private var changedFileDoubleClickHandler: ((GitLabMergeRequestChangeFile) -> Unit)? = null
 
         init {
             // 创建MR列表面板
@@ -677,12 +730,17 @@ class GitLabToolWindowContent(
             mrListPanel.onLoadMore = {
                 loadMoreMergeRequests()
             }
+            mrDetailsPanel.setOnChangedFileDoubleClicked { changeFile ->
+                changedFileDoubleClickHandler?.invoke(changeFile)
+            }
         }
 
         fun setMergeRequests(mrs: List<GitLabMergeRequest>, hasMore: Boolean = false) {
             mrListPanel.setMergeRequests(mrs, hasMore)
             // 清空详情面板，因为刷新后没有选中任何合并请求
             mrDetailsPanel.clear()
+            currentSelectedMergeRequest = null
+            selectedMergeRequestIid = null
         }
 
         fun addMergeRequests(mrs: List<GitLabMergeRequest>) {
@@ -693,6 +751,7 @@ class GitLabToolWindowContent(
             // 设置当前服务器 URL，用于"在GitLab中打开"功能
             mrDetailsPanel.setCurrentServerUrl(currentServer?.url)
             mrDetailsPanel.setMergeRequest(mr)
+            currentSelectedMergeRequest = mr
             selectedMergeRequestIid = mr.iid
             loadMergeRequestChanges(mr)
         }
@@ -712,6 +771,10 @@ class GitLabToolWindowContent(
 
         fun setOnDeleteMR(callback: (GitLabMergeRequest) -> Unit) {
             mrDetailsPanel.setOnDeleteMR(callback)
+        }
+
+        fun setOnChangedFileDoubleClicked(callback: (GitLabMergeRequestChangeFile) -> Unit) {
+            changedFileDoubleClickHandler = callback
         }
 
         /**
@@ -817,6 +880,8 @@ class GitLabToolWindowContent(
                             removeMRFromList(mr)
                             // 清空详情面板
                             mrDetailsPanel.clear()
+                            currentSelectedMergeRequest = null
+                            selectedMergeRequestIid = null
                         } else {
                             GitLabNotifications.showError(project, "删除失败", response.error ?: "未知错误")
                         }
@@ -861,12 +926,15 @@ class GitLabToolWindowContent(
                 mrListPanel.removeMergeRequest(updatedMR.iid)
                 // 清空详情面板
                 mrDetailsPanel.clear()
+                currentSelectedMergeRequest = null
+                selectedMergeRequestIid = null
             } else {
                 // 更新列表中该 MR 的显示
                 mrListPanel.updateMergeRequest(updatedMR)
                 // 更新详情面板
                 mrDetailsPanel.setMergeRequest(updatedMR)
                 mrDetailsPanel.setCurrentServerUrl(currentServer?.url)
+                currentSelectedMergeRequest = updatedMR
                 selectedMergeRequestIid = updatedMR.iid
                 loadMergeRequestChanges(updatedMR)
             }

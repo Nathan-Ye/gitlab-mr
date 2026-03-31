@@ -96,7 +96,7 @@ class MRDetailsPanel : JPanel() {
 
         // 添加标签页
         tabbedPane.addTab("详情", centerCardPanel)
-        tabbedPane.addTab("提交", changesTreePanel)
+        tabbedPane.addTab("变更", changesTreePanel)
 
         // 默认选中详情标签
         tabbedPane.selectedIndex = 0
@@ -424,6 +424,10 @@ class MRDetailsPanel : JPanel() {
 
     fun setOnChangedFileSelected(callback: (GitLabMergeRequestChangeFile) -> Unit) {
         changesTreePanel.onFileSelected = callback
+    }
+
+    fun setOnChangedFileDoubleClicked(callback: (GitLabMergeRequestChangeFile) -> Unit) {
+        changesTreePanel.onFileDoubleClicked = callback
     }
 
     /**

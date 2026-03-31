@@ -13,6 +13,10 @@ import kotlinx.coroutines.*
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
 /**
@@ -91,7 +95,7 @@ class GitLabApiClient(
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val apiBaseUrl: String = "$serverUrl/api/$API_VERSION"
+    private val apiBaseUrl: String = "${normalizeUrl(serverUrl)}/api/$API_VERSION"
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     /**
@@ -103,6 +107,39 @@ class GitLabApiClient(
         } else {
             "$this?private_token=${java.net.URLEncoder.encode(privateToken, "UTF-8")}"
         }
+    }
+
+    private fun encodeProjectId(projectId: String): String {
+        return if (projectId.all { it.isDigit() }) {
+            projectId
+        } else {
+            java.net.URLEncoder.encode(projectId, "UTF-8")
+        }
+    }
+
+    private fun decodeUtf8(bytes: ByteArray): String? {
+        return try {
+            StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString()
+        } catch (_: CharacterCodingException) {
+            null
+        }
+    }
+
+    private fun isLikelyText(contentType: String?, bytes: ByteArray): Boolean {
+        val normalizedType = contentType?.lowercase()
+        if (normalizedType != null) {
+            if (normalizedType.startsWith("text/")) return true
+            if ("json" in normalizedType || "xml" in normalizedType || "javascript" in normalizedType || "yaml" in normalizedType) {
+                return true
+            }
+            if ("octet-stream" in normalizedType) return false
+        }
+
+        return bytes.none { it == 0.toByte() } && decodeUtf8(bytes) != null
     }
 
     // ==================== 连接测试 ====================
@@ -439,6 +476,54 @@ class GitLabApiClient(
                 val error = parseError(response.body?.string())
                 GitLabApiResponse(null, false, error, response.code)
             }
+        } catch (e: Exception) {
+            GitLabApiResponse(null, false, e.message ?: "Unknown error", -1)
+        }
+    }
+
+    suspend fun getRepositoryFileContent(
+        projectId: String,
+        filePath: String,
+        ref: String
+    ): GitLabApiResponse<GitLabMergeRequestFileContent> = withContext(Dispatchers.IO) {
+        try {
+            val encodedProjectId = encodeProjectId(projectId)
+            val encodedFilePath = java.net.URLEncoder.encode(filePath, "UTF-8")
+            val encodedRef = java.net.URLEncoder.encode(ref, "UTF-8")
+            val url = "$apiBaseUrl/projects/$encodedProjectId/repository/files/$encodedFilePath/raw?ref=$encodedRef".withAuthToken()
+
+            val request = Request.Builder()
+                .url(url)
+                .header("Accept", "*/*")
+                .get()
+                .build()
+
+            val response = client.newCall(request).execute()
+
+            if (!response.isSuccessful) {
+                val error = parseError(response.body?.string())
+                return@withContext GitLabApiResponse(null, false, error, response.code)
+            }
+
+            val bodyBytes = response.body?.bytes() ?: ByteArray(0)
+            val isText = isLikelyText(response.header("Content-Type"), bodyBytes)
+            val content = if (isText) {
+                decodeUtf8(bodyBytes) ?: bodyBytes.toString(StandardCharsets.UTF_8)
+            } else {
+                ""
+            }
+
+            GitLabApiResponse(
+                GitLabMergeRequestFileContent(
+                    path = filePath,
+                    content = content,
+                    revision = ref,
+                    isText = isText
+                ),
+                true,
+                null,
+                response.code
+            )
         } catch (e: Exception) {
             GitLabApiResponse(null, false, e.message ?: "Unknown error", -1)
         }
@@ -907,7 +992,8 @@ class GitLabApiClient(
         val upvotes: Int?,
         val downvotes: Int?,
         val user_notes_count: Int?,
-        val force_remove_source_branch: Boolean? = null
+        val force_remove_source_branch: Boolean? = null,
+        val diff_refs: MergeRequestDiffRefsDto? = null
     ) {
         fun toGitLabMergeRequest(): GitLabMergeRequest {
             // 检查是否有冲突：如果有冲突且当前状态为 OPENED，则将状态设为 LOCKED
@@ -944,7 +1030,8 @@ class GitLabApiClient(
                 upvotes = upvotes ?: 0,
                 downvotes = downvotes ?: 0,
                 userNotesCount = user_notes_count ?: 0,
-                forceRemoveSourceBranch = force_remove_source_branch ?: false
+                forceRemoveSourceBranch = force_remove_source_branch ?: false,
+                diffRefs = diff_refs?.toGitLabDiffRefs()
             )
         }
     }
@@ -958,7 +1045,10 @@ class GitLabApiClient(
         val new_path: String,
         val new_file: Boolean?,
         val renamed_file: Boolean?,
-        val deleted_file: Boolean?
+        val deleted_file: Boolean?,
+        val diff: String?,
+        val old_mode: String?,
+        val new_mode: String?
     ) {
         fun toGitLabChangeFile(): GitLabMergeRequestChangeFile {
             val changeType = when {
@@ -971,7 +1061,25 @@ class GitLabApiClient(
             return GitLabMergeRequestChangeFile(
                 path = new_path,
                 oldPath = old_path?.takeIf { it != new_path },
-                changeType = changeType
+                changeType = changeType,
+                diff = diff,
+                oldMode = old_mode,
+                newMode = new_mode,
+                isBinary = false
+            )
+        }
+    }
+
+    private data class MergeRequestDiffRefsDto(
+        val base_sha: String?,
+        val head_sha: String?,
+        val start_sha: String?
+    ) {
+        fun toGitLabDiffRefs(): GitLabMergeRequestDiffRefs {
+            return GitLabMergeRequestDiffRefs(
+                baseSha = base_sha,
+                headSha = head_sha,
+                startSha = start_sha
             )
         }
     }
