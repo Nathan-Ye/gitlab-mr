@@ -4,6 +4,7 @@ import com.gitlab.idea.model.GitLabMergeRequest
 import com.gitlab.idea.model.GitLabMergeRequestChangeFile
 import com.gitlab.idea.model.MergeRequestState
 import com.intellij.ui.JBColor
+import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.TitledSeparator
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextArea
@@ -66,6 +67,7 @@ class MRDetailsPanel : JPanel() {
         // 创建空状态面板
         emptyStatePanel.layout = BorderLayout()
         emptyStatePanel.background = UIUtil.getPanelBackground()
+        emptyStatePanel.border = JBUI.Borders.empty()
         emptyStateLabel.text = "请选择一个合并请求查看详情"
         emptyStateLabel.font = emptyStateLabel.font.deriveFont(Font.PLAIN, 14f)
         emptyStateLabel.foreground = JBColor.GRAY
@@ -76,11 +78,13 @@ class MRDetailsPanel : JPanel() {
         // 外层空状态面板
         emptyStateOuterPanel.layout = BorderLayout()
         emptyStateOuterPanel.background = UIUtil.getPanelBackground()
+        emptyStateOuterPanel.border = JBUI.Borders.empty()
         emptyStateOuterPanel.add(emptyStatePanel, BorderLayout.CENTER)
 
         // 创建滚动面板
-        scrollPane = JScrollPane(mainPanel)
-        scrollPane.border = null
+        scrollPane = ScrollPaneFactory.createScrollPane(mainPanel, true)
+        scrollPane.border = JBUI.Borders.empty()
+        scrollPane.viewportBorder = JBUI.Borders.empty()
         scrollPane.verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
         // 加快鼠标滚轮滚动速度（单位滚动增量）
         scrollPane.verticalScrollBar.unitIncrement = 16
@@ -88,11 +92,13 @@ class MRDetailsPanel : JPanel() {
         // 创建中心卡片面板，用于在空状态和详情之间切换
         centerCardLayout = CardLayout()
         centerCardPanel = JPanel(centerCardLayout)
+        centerCardPanel.border = JBUI.Borders.empty()
         centerCardPanel.add(scrollPane, "CONTENT")
 
         // 创建标签栏，标签位置放在底部
         tabbedPane = JTabbedPane(JTabbedPane.BOTTOM)
         tabbedPane.background = UIUtil.getPanelBackground()
+        tabbedPane.border = JBUI.Borders.empty()
 
         // 添加标签页
         tabbedPane.addTab("详情", centerCardPanel)
@@ -105,6 +111,7 @@ class MRDetailsPanel : JPanel() {
         }
 
         // 外层卡片面板添加空状态和标签栏
+        outerCardPanel.border = JBUI.Borders.empty()
         outerCardPanel.add(emptyStateOuterPanel, "EMPTY")
         outerCardPanel.add(tabbedPane, "CONTENT")
 

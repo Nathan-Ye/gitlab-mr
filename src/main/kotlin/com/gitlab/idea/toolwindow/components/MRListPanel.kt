@@ -178,7 +178,8 @@ class MRListPanel : JPanel() {
 
         // 添加滚动面板
         scrollPane = JBScrollPane(mrList)
-        scrollPane.border = null
+        scrollPane.border = JBUI.Borders.empty()
+        scrollPane.viewportBorder = JBUI.Borders.empty()
 
         // 添加滚动监听，实现自动加载更多
         scrollPane.verticalScrollBar.addAdjustmentListener { e ->
@@ -203,11 +204,8 @@ class MRListPanel : JPanel() {
         add(filterPanel, BorderLayout.NORTH)
         add(listWrapper, BorderLayout.CENTER)
 
-        // 使用 IDEA 原生分割线边框
-        border = JBUI.Borders.customLine(
-            JBColor.border().darker(),
-            0, 0, 0, 1
-        )
+        // 移除边框，保持与详情面板一致
+        border = JBUI.Borders.empty()
     }
 
     /**
