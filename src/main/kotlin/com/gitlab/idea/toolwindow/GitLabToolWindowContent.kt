@@ -16,6 +16,8 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.ui.DialogWrapper.OK_EXIT_CODE
+import com.intellij.ui.JBColor
+import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.*
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
@@ -703,6 +705,8 @@ class GitLabToolWindowContent(
 
             // 使用 IDEA 原生分割面板
             val splitter = com.intellij.ui.JBSplitter(false, 0.6f)
+            splitter.dividerWidth = 4
+            splitter.divider.border = JBUI.Borders.customLine(JBColor.border(), 0, 1, 0, 0)
             splitter.firstComponent = mrListPanel
             splitter.secondComponent = mrDetailsPanel
 
