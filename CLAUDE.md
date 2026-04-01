@@ -25,7 +25,7 @@ gradlew.bat buildPlugin
 ./gradlew buildPlugin
 ```
 
-Output: `build/distributions/gitlab-idea-plugin-1.0.0.zip`
+Output: `build/distributions/gitlab-idea-plugin-2.0.0.zip`
 
 ### Running the Plugin in Development
 1. Open project in IntelliJ IDEA (2023.2+)
@@ -69,7 +69,15 @@ verify.bat    # Windows script that runs clean buildPlugin
     - `getProject(projectPath)` - Gets project by path (URL-encoded)
     - `getMergeRequests(projectId, state, page, perPage)` - Paginated MR listing
     - `getAllMergeRequests()` - Auto-paginates to fetch all MRs
+    - `getMergeRequestChanges(projectId, mrIid)` - Gets MR change files
+    - `getMergeRequestVersions(projectId, mrIid)` - Gets MR version history
   - Internal DTOs (`MergeResponseDto`, `AuthorDto`) convert to domain models
+- `MRDiffContentLoader.kt` - Loads diff content for MR file comparison
+  - Fetches file content at specific commits for diff viewing
+  - Handles binary file detection and error cases
+- `MRDiffService.kt` - Integrates with IntelliJ's native Diff viewer
+  - Creates `SimpleDiffRequest` for IntelliJ DiffManager
+  - Supports syntax highlighting based on file type
 
 **Configuration System:**
 - `GitLabConfigService.kt` - `PersistentStateComponent` storing `GitLabServer` configs
@@ -93,12 +101,20 @@ verify.bat    # Windows script that runs clean buildPlugin
 **UI Components (`toolwindow/components/`):**
 - `EmptyStatePanel.kt` - "Add GitLab Server" prompt
 - `ErrorStatePanel.kt` - Error display with retry/edit buttons
+- `LoadingStatePanel.kt` - Loading state with spinner display
 - `MRListPanel.kt` - MR list with:
   - State filter dropdown (Opened/Closed/Locked/Merged/All)
   - Username filter text field
   - "Load More" button for pagination
   - Clickable MR list (selects to show details)
-- `MRDetailsPanel.kt` - MR detail view
+- `MRDetailsPanel.kt` - MR detail view with tabbed interface
+- `MRChangesTreePanel.kt` - MR change file tree view
+  - Hierarchical display of changed files grouped by module
+  - Expand/collapse all functionality
+  - File type icons and change type indicators
+  - Double-click to open native IntelliJ Diff viewer
+- `MRActionToolbar.kt` - Toolbar with MR action buttons (merge, close, etc.)
+- `ToolWindowSideToolbar.kt` - Side toolbar for quick actions
 
 **Utilities:**
 - `GitUtil.kt` - Git repository helpers: `getRemoteUrl()`, `extractProjectPathFromUrl()`
@@ -110,7 +126,7 @@ verify.bat    # Windows script that runs clean buildPlugin
 - Services: `GitLabApplicationService` (app), `GitLabProjectService` (project)
 - Actions: Refresh, AddServer (with icons)
 - Dependencies: `Git4Idea` (optional)
-- Platform support: since-build="241", until-build="251.*"
+- Platform support: since-build="241", until-build="253.*"
 
 ### Configuration Loading Flow
 
@@ -162,6 +178,15 @@ verify.bat    # Windows script that runs clean buildPlugin
 - Filtering is client-side after data loads
 - Pagination state: `currentPage`, `hasMore`, `isLoadingMore`
 
+### MR Changes Tree & Diff Viewer
+
+- `MRChangesTreePanel` displays changed files in a tree structure grouped by directory/module
+- Change types: Added, Modified, Deleted, Renamed (with different icons)
+- Expand/collapse operations: "Expand All" and "Collapse to Module Level"
+- Double-click on file triggers native IntelliJ Diff viewer via `MRDiffService`
+- `MRDiffContentLoader` fetches file content at base and head commits for comparison
+- Binary files are detected and handled gracefully
+
 ## Important Development Notes
 
 1. **Project Matching**: The plugin tries multiple strategies to find the GitLab project. If a server has `projectPath` configured, it uses that. Otherwise, it extracts from Git remote URLs or falls back to user's first project.
@@ -174,7 +199,7 @@ verify.bat    # Windows script that runs clean buildPlugin
 
 5. **Git4Idea Dependency**: Marked optional in `plugin.xml`. Plugin works without Git integration but features requiring it (like remote URL extraction) will be limited.
 
-6. **Build Compatibility**: Plugin targets IntelliJ 2024.2+ (build 241) through 2025.1 (251.*). Modify `patchPluginXml` block in `build.gradle.kts` to change range.
+6. **Build Compatibility**: Plugin targets IntelliJ 2024.2+ (build 241) through 2025.3 (253.*). Modify `patchPluginXml` block in `build.gradle.kts` to change range.
 
 ## Testing the Plugin
 
