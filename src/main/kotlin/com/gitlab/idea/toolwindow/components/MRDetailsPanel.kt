@@ -92,8 +92,10 @@ class MRDetailsPanel : JPanel() {
         // 创建中心卡片面板，用于在空状态和详情之间切换
         centerCardLayout = CardLayout()
         centerCardPanel = JPanel(centerCardLayout)
-        centerCardPanel.border = JBUI.Borders.empty()
+        centerCardPanel.border = JBUI.Borders.customLine(JBColor.border(), 0, 0, 1, 0)
         centerCardPanel.add(scrollPane, "CONTENT")
+
+        changesTreePanel.border = JBUI.Borders.customLine(JBColor.border(), 0, 0, 1, 0)
 
         // 创建标签栏，标签位置放在底部
         tabbedPane = JTabbedPane(JTabbedPane.BOTTOM)
