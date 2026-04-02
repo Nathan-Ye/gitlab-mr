@@ -63,6 +63,7 @@ class GitLabToolWindowContent(
     private var currentApiClient: GitLabApiClient? = null
     private var currentProjectId: String? = null
     private var mergeRequestChangesJob: Job? = null
+    private var refreshMergeRequestJob: Job? = null
     private var selectedMergeRequestIid: Long? = null
     private var currentSelectedMergeRequest: GitLabMergeRequest? = null
     private var openDiffJob: Job? = null
@@ -139,6 +140,7 @@ class GitLabToolWindowContent(
         mainContentPanel.setOnCloseMR { mr -> mainContentPanel.handleCloseMR(mr) }
         mainContentPanel.setOnMergeMR { mr -> mainContentPanel.handleMergeMR(mr) }
         mainContentPanel.setOnDeleteMR { mr -> mainContentPanel.handleDeleteMR(mr) }
+        mainContentPanel.setOnRefreshMR { mr -> mainContentPanel.handleRefreshMR(mr) }
         mainContentPanel.setOnChangedFileDoubleClicked { changeFile -> openMergeRequestDiff(changeFile) }
     }
 
@@ -670,6 +672,7 @@ class GitLabToolWindowContent(
 
     override fun dispose() {
         mergeRequestChangesJob?.cancel()
+        refreshMergeRequestJob?.cancel()
         openDiffJob?.cancel()
         coroutineScope.cancel()
     }
@@ -775,6 +778,10 @@ class GitLabToolWindowContent(
 
         fun setOnDeleteMR(callback: (GitLabMergeRequest) -> Unit) {
             mrDetailsPanel.setOnDeleteMR(callback)
+        }
+
+        fun setOnRefreshMR(callback: (GitLabMergeRequest) -> Unit) {
+            mrDetailsPanel.setOnRefreshMR(callback)
         }
 
         fun setOnChangedFileDoubleClicked(callback: (GitLabMergeRequestChangeFile) -> Unit) {
@@ -904,6 +911,46 @@ class GitLabToolWindowContent(
         /**
          * 在列表中刷新单个MR
          */
+        fun handleRefreshMR(mr: GitLabMergeRequest) {
+            val apiClient = currentApiClient ?: return
+            val projectId = currentProjectId ?: return
+
+            refreshMergeRequestJob?.cancel()
+            mrDetailsPanel.setMergeRequestRefreshing(true)
+            mrDetailsPanel.setMergeRequestChangesLoading()
+
+            refreshMergeRequestJob = launch {
+                try {
+                    val response = apiClient.getMergeRequest(projectId, mr.iid)
+                    ApplicationManager.getApplication().invokeLater {
+                        if (selectedMergeRequestIid != mr.iid) return@invokeLater
+
+                        if (response.success && response.data != null) {
+                            refreshMRInList(response.data)
+                        } else {
+                            mrDetailsPanel.setMergeRequestRefreshing(false)
+                            mrDetailsPanel.setMergeRequestChangesError(response.error)
+                            GitLabNotifications.showError(project, "刷新失败", response.error ?: "未知错误")
+                        }
+                    }
+                } catch (_: CancellationException) {
+                    ApplicationManager.getApplication().invokeLater {
+                        if (selectedMergeRequestIid == mr.iid) {
+                            mrDetailsPanel.setMergeRequestRefreshing(false)
+                        }
+                    }
+                } catch (e: Exception) {
+                    ApplicationManager.getApplication().invokeLater {
+                        if (selectedMergeRequestIid == mr.iid) {
+                            mrDetailsPanel.setMergeRequestRefreshing(false)
+                            mrDetailsPanel.setMergeRequestChangesError(e.message)
+                            GitLabNotifications.showError(project, "刷新失败", e.message ?: "未知错误")
+                        }
+                    }
+                }
+            }
+        }
+
         private fun refreshMRInList(updatedMR: GitLabMergeRequest) {
             // 更新 mergeRequests 列表中的MR
             val index = mergeRequests.indexOfFirst { it.iid == updatedMR.iid }
@@ -973,6 +1020,7 @@ class GitLabToolWindowContent(
                         } else {
                             mrDetailsPanel.setMergeRequestChangesError(response.error)
                         }
+                        mrDetailsPanel.setMergeRequestRefreshing(false)
                     }
                 } catch (_: CancellationException) {
                     // Ignore stale requests when selection changes.
@@ -980,6 +1028,7 @@ class GitLabToolWindowContent(
                     ApplicationManager.getApplication().invokeLater {
                         if (selectedMergeRequestIid == mr.iid) {
                             mrDetailsPanel.setMergeRequestChangesError(e.message)
+                            mrDetailsPanel.setMergeRequestRefreshing(false)
                         }
                     }
                 }

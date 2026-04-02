@@ -51,6 +51,8 @@ class MRDetailsPanel : JPanel() {
     private var scrollPane: JScrollPane
     private val emptyStatePanel = JPanel()
     private val emptyStateLabel = JLabel()
+    private val refreshingPanel = JPanel()
+    private val refreshingLabel = JLabel()
     private val centerCardPanel: JPanel
     private val centerCardLayout: CardLayout
 
@@ -94,6 +96,15 @@ class MRDetailsPanel : JPanel() {
         centerCardPanel = JPanel(centerCardLayout)
         centerCardPanel.border = JBUI.Borders.customLine(JBColor.border(), 0, 0, 1, 0)
         centerCardPanel.add(scrollPane, "CONTENT")
+        refreshingPanel.layout = BorderLayout()
+        refreshingPanel.background = UIUtil.getPanelBackground()
+        refreshingLabel.text = "刷新中..."
+        refreshingLabel.font = refreshingLabel.font.deriveFont(Font.PLAIN, 14f)
+        refreshingLabel.foreground = JBColor.GRAY
+        refreshingLabel.horizontalAlignment = SwingConstants.CENTER
+        refreshingLabel.verticalAlignment = SwingConstants.CENTER
+        refreshingPanel.add(refreshingLabel, BorderLayout.CENTER)
+        centerCardPanel.add(refreshingPanel, "REFRESHING")
 
         changesTreePanel.border = JBUI.Borders.customLine(JBColor.border(), 0, 0, 1, 0)
 
@@ -348,6 +359,7 @@ class MRDetailsPanel : JPanel() {
 
         // 显示工具栏和外层标签栏内容
         actionToolbar.isVisible = true
+        actionToolbar.setRefreshing(false)
         outerCardLayout.show(outerCardPanel, "CONTENT")
         centerCardLayout.show(centerCardPanel, "CONTENT")
 
@@ -447,6 +459,17 @@ class MRDetailsPanel : JPanel() {
         changesTreePanel.showLoading()
     }
 
+    fun setMergeRequestRefreshing(refreshing: Boolean) {
+        actionToolbar.setRefreshing(refreshing)
+        if (refreshing && currentMR != null) {
+            outerCardLayout.show(outerCardPanel, "CONTENT")
+            centerCardLayout.show(centerCardPanel, "REFRESHING")
+        } else {
+            centerCardLayout.show(centerCardPanel, "CONTENT")
+        }
+        updateChangeTabActionsVisibility()
+    }
+
     fun setMergeRequestChanges(changes: List<GitLabMergeRequestChangeFile>) {
         changesTreePanel.setChanges(changes)
     }
@@ -469,6 +492,7 @@ class MRDetailsPanel : JPanel() {
     fun clear() {
         currentMR = null
         actionToolbar.isVisible = false
+        actionToolbar.setRefreshing(false)
 
         // 隐藏工具栏，显示外层空状态
         actionToolbar.isVisible = false
@@ -483,6 +507,10 @@ class MRDetailsPanel : JPanel() {
 
     fun setOnCloseMR(callback: (GitLabMergeRequest) -> Unit) {
         actionToolbar.onCloseMRClicked = callback
+    }
+
+    fun setOnRefreshMR(callback: (GitLabMergeRequest) -> Unit) {
+        actionToolbar.onRefreshMRClicked = callback
     }
 
     fun setOnMergeMR(callback: (GitLabMergeRequest) -> Unit) {

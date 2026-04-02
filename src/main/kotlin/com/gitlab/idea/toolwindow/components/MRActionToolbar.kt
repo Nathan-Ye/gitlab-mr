@@ -22,6 +22,7 @@ import javax.swing.JPanel
  */
 class MRActionToolbar : JPanel() {
 
+    var onRefreshMRClicked: ((GitLabMergeRequest) -> Unit)? = null
     var onCloseMRClicked: ((GitLabMergeRequest) -> Unit)? = null
     var onMergeMRClicked: ((GitLabMergeRequest) -> Unit)? = null
     var onDeleteMRClicked: ((GitLabMergeRequest) -> Unit)? = null
@@ -31,6 +32,7 @@ class MRActionToolbar : JPanel() {
 
     private var currentMR: GitLabMergeRequest? = null
     private var changeActionsVisible: Boolean = false
+    private var isRefreshing: Boolean = false
 
     init {
         layout = BorderLayout()
@@ -68,6 +70,7 @@ class MRActionToolbar : JPanel() {
             MergeMRAction(),
             DeleteMRAction(),
             Separator.create(),
+            RefreshMRAction(),
             OpenInBrowserMRAction()
         )
 
@@ -80,6 +83,26 @@ class MRActionToolbar : JPanel() {
 
     fun setChangeActionsVisible(visible: Boolean) {
         changeActionsVisible = visible
+    }
+
+    fun setRefreshing(refreshing: Boolean) {
+        isRefreshing = refreshing
+    }
+
+    private inner class RefreshMRAction : AnAction(
+        "刷新",
+        "刷新当前合并请求",
+        AllIcons.Actions.Refresh
+    ) {
+        override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
+
+        override fun actionPerformed(e: AnActionEvent) {
+            currentMR?.let { onRefreshMRClicked?.invoke(it) }
+        }
+
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = currentMR != null && !isRefreshing
+        }
     }
 
     /**
@@ -98,7 +121,7 @@ class MRActionToolbar : JPanel() {
 
         override fun update(e: AnActionEvent) {
             val mr = currentMR
-            e.presentation.isEnabled = mr?.state == MergeRequestState.OPENED
+            e.presentation.isEnabled = !isRefreshing && mr?.state == MergeRequestState.OPENED
         }
     }
 
@@ -118,7 +141,7 @@ class MRActionToolbar : JPanel() {
 
         override fun update(e: AnActionEvent) {
             val mr = currentMR
-            e.presentation.isEnabled = mr?.state == MergeRequestState.OPENED
+            e.presentation.isEnabled = !isRefreshing && mr?.state == MergeRequestState.OPENED
         }
     }
 
@@ -139,8 +162,9 @@ class MRActionToolbar : JPanel() {
         override fun update(e: AnActionEvent) {
             val mr = currentMR
             // 仅 OPENED 和 CLOSED 状态可以删除
-            e.presentation.isEnabled = mr?.state == MergeRequestState.OPENED
-                || mr?.state == MergeRequestState.CLOSED
+            e.presentation.isEnabled = !isRefreshing && (
+                mr?.state == MergeRequestState.OPENED || mr?.state == MergeRequestState.CLOSED
+            )
         }
     }
 
@@ -184,7 +208,7 @@ class MRActionToolbar : JPanel() {
 
         override fun update(e: AnActionEvent) {
             val mr = currentMR
-            e.presentation.isEnabled = mr != null && currentServerUrl != null && mr.webUrl.isNotEmpty()
+            e.presentation.isEnabled = !isRefreshing && mr != null && currentServerUrl != null && mr.webUrl.isNotEmpty()
         }
     }
 
