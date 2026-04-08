@@ -79,10 +79,10 @@ data class GitLabProject(
  * GitLab合并请求状态
  */
 enum class MergeRequestState(val displayName: String) {
-    OPENED("OPENED"),
-    CLOSED("CLOSED"),
-    LOCKED("LOCKED"),
-    MERGED("MERGED");
+    OPENED("待合并"),
+    CLOSED("已关闭"),
+    LOCKED("有冲突"),
+    MERGED("已合并");
 
     companion object {
         fun fromString(value: String?): MergeRequestState {

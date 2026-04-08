@@ -78,7 +78,7 @@ class MRListPanel : JPanel() {
         // 状态下拉筛选
         val stateLabel = JLabel("状态:")
         stateLabel.font = stateLabel.font.deriveFont(Font.PLAIN, 12f)
-        stateFilter = JComboBox(arrayOf("全部", "OPENED", "CLOSED", "LOCKED", "MERGED"))
+        stateFilter = JComboBox(arrayOf("全部", "待合并", "已关闭", "有冲突", "已合并"))
         stateFilter.preferredSize = Dimension(90, 36)
         stateFilter.maximumSize = Dimension(90, 36)
         stateFilter.addActionListener {
@@ -319,10 +319,10 @@ class MRListPanel : JPanel() {
     private fun applyFilters() {
         val stateText = stateFilter.selectedItem as String
         val state = when (stateText) {
-            "OPENED" -> MergeRequestState.OPENED
-            "CLOSED" -> MergeRequestState.CLOSED
-            "LOCKED" -> MergeRequestState.LOCKED
-            "MERGED" -> MergeRequestState.MERGED
+            "待合并" -> MergeRequestState.OPENED
+            "已关闭" -> MergeRequestState.CLOSED
+            "有冲突" -> MergeRequestState.LOCKED
+            "已合并" -> MergeRequestState.MERGED
             else -> null
         }
 
