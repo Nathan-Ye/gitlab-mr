@@ -19,6 +19,8 @@ import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
+private val CHECKING_MERGE_STATUSES = setOf("checking", "preparing", "unchecked", "approvals_syncing")
+
 /**
  * GitLab API客户端
  * 提供与GitLab REST API交互的所有功能
@@ -988,6 +990,8 @@ class GitLabApiClient(
         val draft: Boolean?,
         val work_in_progress: Boolean?,
         val has_conflicts: Boolean?,
+        val merge_status: String?,
+        val detailed_merge_status: String?,
         val labels: List<String>?,
         val upvotes: Int?,
         val downvotes: Int?,
@@ -996,13 +1000,19 @@ class GitLabApiClient(
         val diff_refs: MergeRequestDiffRefsDto? = null
     ) {
         fun toGitLabMergeRequest(): GitLabMergeRequest {
-            // 检查是否有冲突：如果有冲突且当前状态为 OPENED，则将状态设为 LOCKED
             val hasConflict = has_conflicts ?: false
-            val apiState = MergeRequestState.fromString(state)
-            val finalState = if (hasConflict && apiState == MergeRequestState.OPENED) {
-                MergeRequestState.LOCKED
-            } else {
-                apiState
+            val apiState = state.lowercase()
+            val detailedMergeStatus = detailed_merge_status?.lowercase()
+            val mergeStatus = merge_status?.lowercase()
+            val finalState = when (apiState) {
+                "merged" -> MergeRequestState.MERGED
+                "closed" -> MergeRequestState.CLOSED
+                "opened" -> when {
+                    detailedMergeStatus in CHECKING_MERGE_STATUSES || mergeStatus in CHECKING_MERGE_STATUSES -> MergeRequestState.CHECKING
+                    detailedMergeStatus == "conflict" || hasConflict -> MergeRequestState.LOCKED
+                    else -> MergeRequestState.OPENED
+                }
+                else -> MergeRequestState.fromString(state)
             }
 
             return GitLabMergeRequest(
@@ -1012,6 +1022,8 @@ class GitLabApiClient(
                 title = title,
                 description = description,
                 state = finalState,
+                mergeStatusRaw = merge_status,
+                detailedMergeStatusRaw = detailed_merge_status,
                 sourceBranch = source_branch,
                 targetBranch = target_branch,
                 author = author.toGitLabUser(),

@@ -548,6 +548,7 @@ class MRDetailsPanel(project: Project) : JPanel() {
     private fun getStateColor(state: MergeRequestState): Color {
         return when (state) {
             MergeRequestState.OPENED -> JBColor(Color(0x7058a3), Color(0x7058a3))
+            MergeRequestState.CHECKING -> JBColor(Color(0x5f7896), Color(0x5f7896))
             MergeRequestState.CLOSED -> JBColor(Color(0x7f8c8d), Color(0x7f8c8d))
             MergeRequestState.LOCKED -> JBColor(Color(0x9f9627), Color(0x9f9627))
             MergeRequestState.MERGED -> JBColor(Color(0x108548), Color(0x108548))

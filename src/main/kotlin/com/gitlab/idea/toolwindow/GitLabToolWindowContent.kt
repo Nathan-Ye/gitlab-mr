@@ -64,6 +64,9 @@ class GitLabToolWindowContent(
     private var currentApiClient: GitLabApiClient? = null
     private var currentProjectId: String? = null
     private var currentRepositoryRoot: VirtualFile? = null
+    private val mrPollingJobs = mutableMapOf<Long, Job>()
+    private val mrRequestVersion = mutableMapOf<Long, Long>()
+    private var listReloadGeneration: Long = 0
     private var mergeRequestChangesJob: Job? = null
     private var refreshMergeRequestJob: Job? = null
     private var selectedMergeRequestIid: Long? = null
@@ -230,6 +233,8 @@ class GitLabToolWindowContent(
      * 加载数据
      */
     private fun loadData(server: GitLabServer) {
+        cancelAllPollingJobs()
+
         // 显示加载状态
         loadingStatePanel.setLoadingMessage("正在刷新...")
         showCard(CardState.LOADING)
@@ -288,12 +293,127 @@ class GitLabToolWindowContent(
         }
     }
 
+    private fun nextMrRequestVersion(mrIid: Long): Long {
+        val nextVersion = (mrRequestVersion[mrIid] ?: 0L) + 1
+        mrRequestVersion[mrIid] = nextVersion
+        return nextVersion
+    }
+
+    private fun isLatestMrRequestVersion(mrIid: Long, version: Long): Boolean {
+        return mrRequestVersion[mrIid] == version
+    }
+
+    private fun nextListReloadGeneration(): Long {
+        listReloadGeneration += 1
+        return listReloadGeneration
+    }
+
+    private fun shouldIncludeInCurrentFilter(mr: GitLabMergeRequest): Boolean {
+        return when (filterState) {
+            null -> true
+            MergeRequestState.OPENED -> mr.state == MergeRequestState.OPENED || mr.state == MergeRequestState.CHECKING
+            else -> mr.state == filterState
+        }
+    }
+
+    private fun currentListStateParam(): String {
+        return when (filterState) {
+            MergeRequestState.OPENED, MergeRequestState.CHECKING -> "opened"
+            MergeRequestState.CLOSED -> "closed"
+            MergeRequestState.LOCKED -> "locked"
+            MergeRequestState.MERGED -> "merged"
+            null -> "all"
+        }
+    }
+
+    private fun cancelAllPollingJobs() {
+        mrPollingJobs.values.forEach { it.cancel() }
+        mrPollingJobs.clear()
+    }
+
+    private fun stopPollingMergeRequest(mrIid: Long) {
+        mrPollingJobs.remove(mrIid)?.cancel()
+    }
+
+    private fun ensurePollingMergeRequest(mrIid: Long) {
+        if (mrPollingJobs[mrIid]?.isActive == true) return
+
+        val apiClient = currentApiClient ?: return
+        val projectId = currentProjectId ?: return
+
+        mrPollingJobs[mrIid] = launch {
+            var consecutiveFailures = 0
+            val startedAt = System.currentTimeMillis()
+
+            while (isActive && System.currentTimeMillis() - startedAt < 90_000L) {
+                delay(2_000L)
+
+                val version = nextMrRequestVersion(mrIid)
+                try {
+                    val response = apiClient.getMergeRequest(projectId, mrIid)
+                    if (!isActive || !isLatestMrRequestVersion(mrIid, version)) continue
+
+                    if (response.success && response.data != null) {
+                        consecutiveFailures = 0
+                        val updatedMR = response.data
+                        ApplicationManager.getApplication().invokeLater {
+                            if (!isLatestMrRequestVersion(mrIid, version)) return@invokeLater
+                            mainContentPanel.refreshMRInList(updatedMR)
+                        }
+
+                        if (updatedMR.state != MergeRequestState.CHECKING) {
+                            stopPollingMergeRequest(mrIid)
+                            break
+                        }
+                    } else {
+                        consecutiveFailures += 1
+                        if (consecutiveFailures >= 3) {
+                            stopPollingMergeRequest(mrIid)
+                            break
+                        }
+                    }
+                } catch (_: CancellationException) {
+                    break
+                } catch (_: Exception) {
+                    consecutiveFailures += 1
+                    if (consecutiveFailures >= 3) {
+                        stopPollingMergeRequest(mrIid)
+                        break
+                    }
+                }
+            }
+
+            mrPollingJobs.remove(mrIid)
+        }
+    }
+
+    private fun trackCreatedMergeRequest(mrIid: Long) {
+        val apiClient = currentApiClient ?: return
+        val projectId = currentProjectId ?: return
+        val version = nextMrRequestVersion(mrIid)
+
+        launch {
+            try {
+                val response = apiClient.getMergeRequest(projectId, mrIid)
+                ApplicationManager.getApplication().invokeLater {
+                    if (!isLatestMrRequestVersion(mrIid, version)) return@invokeLater
+                    if (response.success && response.data != null) {
+                        mainContentPanel.refreshMRInList(response.data)
+                    }
+                }
+            } catch (_: CancellationException) {
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     /**
      * 初始加载合并请求列表（仅第一页）
      */
     private fun loadMergeRequestsInitial(apiClient: GitLabApiClient, projectId: String) {
         currentApiClient = apiClient
         currentProjectId = projectId
+        val generation = nextListReloadGeneration()
 
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "Loading GitLab Merge Requests", true) {
             override fun run(indicator: ProgressIndicator) {
@@ -309,6 +429,7 @@ class GitLabToolWindowContent(
 
                     if (response.success && response.data != null) {
                         ApplicationManager.getApplication().invokeLater {
+                            if (generation != listReloadGeneration) return@invokeLater
                             mergeRequests.clear()
                             mergeRequests.addAll(response.data)
                             filteredMergeRequests = response.data
@@ -317,6 +438,9 @@ class GitLabToolWindowContent(
 
                             mainContentPanel.setMergeRequests(response.data, hasMore)
                             showCard(CardState.MAIN)
+                            currentSelectedMergeRequest?.takeIf { it.state == MergeRequestState.CHECKING }?.let {
+                                ensurePollingMergeRequest(it.iid)
+                            }
                         }
                     } else {
                         ApplicationManager.getApplication().invokeLater {
@@ -360,14 +484,7 @@ class GitLabToolWindowContent(
             try {
                 val nextPage = currentPage + 1
 
-                // 构建状态参数
-                val stateParam = when (filterState) {
-                    MergeRequestState.OPENED -> "opened"
-                    MergeRequestState.CLOSED -> "closed"
-                    MergeRequestState.LOCKED -> "locked"
-                    MergeRequestState.MERGED -> "merged"
-                    null -> "all"
-                }
+                val stateParam = currentListStateParam()
 
                 // 使用筛选条件调用 API
                 val response = currentApiClient!!.getMergeRequests(
@@ -460,17 +577,11 @@ class GitLabToolWindowContent(
     private fun loadMergeRequestsWithFilter() {
         val apiClient = currentApiClient ?: return
         val projectId = currentProjectId ?: return
+        val generation = nextListReloadGeneration()
 
         launch {
             try {
-                // 构建状态参数
-                val stateParam = when (filterState) {
-                    MergeRequestState.OPENED -> "opened"
-                    MergeRequestState.CLOSED -> "closed"
-                    MergeRequestState.LOCKED -> "locked"
-                    MergeRequestState.MERGED -> "merged"
-                    null -> "all"
-                }
+                val stateParam = currentListStateParam()
 
                 // 调用 API
                 val response = apiClient.getMergeRequests(
@@ -484,6 +595,7 @@ class GitLabToolWindowContent(
 
                 if (response.success && response.data != null) {
                     ApplicationManager.getApplication().invokeLater {
+                        if (generation != listReloadGeneration) return@invokeLater
                         mergeRequests.clear()
                         mergeRequests.addAll(response.data)
                         filteredMergeRequests = response.data
@@ -492,6 +604,9 @@ class GitLabToolWindowContent(
 
                         mainContentPanel.setMergeRequests(response.data, hasMore)
                         showCard(CardState.MAIN)
+                        currentSelectedMergeRequest?.takeIf { it.state == MergeRequestState.CHECKING }?.let {
+                            ensurePollingMergeRequest(it.iid)
+                        }
                     }
                 } else {
                     ApplicationManager.getApplication().invokeLater {
@@ -651,6 +766,9 @@ class GitLabToolWindowContent(
                         // 如果成功创建，无感刷新MR列表
                         if (dialog.exitCode == OK_EXIT_CODE) {
                             refreshMergeRequestsSilently()
+                            dialog.getCreatedMergeRequest()?.let { createdMr ->
+                                trackCreatedMergeRequest(createdMr.iid)
+                            }
                         }
                     }
                 }
@@ -678,6 +796,7 @@ class GitLabToolWindowContent(
     fun getContent(): JComponent = mainPanel
 
     override fun dispose() {
+        cancelAllPollingJobs()
         mergeRequestChangesJob?.cancel()
         refreshMergeRequestJob?.cancel()
         openDiffJob?.cancel()
@@ -769,6 +888,9 @@ class GitLabToolWindowContent(
             currentSelectedMergeRequest = mr
             selectedMergeRequestIid = mr.iid
             loadMergeRequestChanges(mr)
+            if (mr.state == MergeRequestState.CHECKING) {
+                ensurePollingMergeRequest(mr.iid)
+            }
         }
 
         fun setRepositoryRoot(root: VirtualFile?) {
@@ -931,11 +1053,13 @@ class GitLabToolWindowContent(
             refreshMergeRequestJob?.cancel()
             mrDetailsPanel.setMergeRequestRefreshing(true)
             mrDetailsPanel.setMergeRequestChangesLoading()
+            val version = nextMrRequestVersion(mr.iid)
 
             refreshMergeRequestJob = launch {
                 try {
                     val response = apiClient.getMergeRequest(projectId, mr.iid)
                     ApplicationManager.getApplication().invokeLater {
+                        if (!isLatestMrRequestVersion(mr.iid, version)) return@invokeLater
                         if (selectedMergeRequestIid != mr.iid) return@invokeLater
 
                         if (response.success && response.data != null) {
@@ -948,12 +1072,14 @@ class GitLabToolWindowContent(
                     }
                 } catch (_: CancellationException) {
                     ApplicationManager.getApplication().invokeLater {
+                        if (!isLatestMrRequestVersion(mr.iid, version)) return@invokeLater
                         if (selectedMergeRequestIid == mr.iid) {
                             mrDetailsPanel.setMergeRequestRefreshing(false)
                         }
                     }
                 } catch (e: Exception) {
                     ApplicationManager.getApplication().invokeLater {
+                        if (!isLatestMrRequestVersion(mr.iid, version)) return@invokeLater
                         if (selectedMergeRequestIid == mr.iid) {
                             mrDetailsPanel.setMergeRequestRefreshing(false)
                             mrDetailsPanel.setMergeRequestChangesError(e.message)
@@ -964,26 +1090,29 @@ class GitLabToolWindowContent(
             }
         }
 
-        private fun refreshMRInList(updatedMR: GitLabMergeRequest) {
+        fun refreshMRInList(updatedMR: GitLabMergeRequest) {
             // 更新 mergeRequests 列表中的MR
             val index = mergeRequests.indexOfFirst { it.iid == updatedMR.iid }
             if (index != -1) {
                 mergeRequests[index] = updatedMR
+            } else {
+                mergeRequests.add(0, updatedMR)
             }
 
-            // 更新 filteredMergeRequests 列表中的MR
+            val shouldInclude = shouldIncludeInCurrentFilter(updatedMR)
             val filteredIndex = filteredMergeRequests.indexOfFirst { it.iid == updatedMR.iid }
-            if (filteredIndex != -1) {
+            if (filteredIndex != -1 && shouldInclude) {
                 filteredMergeRequests = filteredMergeRequests.toMutableList().apply {
                     this[filteredIndex] = updatedMR
                 }
+            } else if (filteredIndex == -1 && shouldInclude) {
+                filteredMergeRequests = listOf(updatedMR) + filteredMergeRequests
+            } else if (filteredIndex != -1) {
+                filteredMergeRequests = filteredMergeRequests.filter { it.iid != updatedMR.iid }
             }
 
             // 检查是否需要从列表中移除（因状态变化不再符合筛选条件）
-            val shouldRemove = when {
-                filterState != null && updatedMR.state != filterState -> true
-                else -> false
-            }
+            val shouldRemove = !shouldInclude
 
             if (shouldRemove) {
                 // 从列表中移除该 MR
@@ -992,15 +1121,25 @@ class GitLabToolWindowContent(
                 mrDetailsPanel.clear()
                 currentSelectedMergeRequest = null
                 selectedMergeRequestIid = null
+                stopPollingMergeRequest(updatedMR.iid)
             } else {
                 // 更新列表中该 MR 的显示
-                mrListPanel.updateMergeRequest(updatedMR)
+                if (!mrListPanel.updateMergeRequest(updatedMR) && filterState != null) {
+                    mrListPanel.addMoreMergeRequests(listOf(updatedMR))
+                }
                 // 更新详情面板
-                mrDetailsPanel.setMergeRequest(updatedMR)
-                mrDetailsPanel.setCurrentServerUrl(currentServer?.url)
-                currentSelectedMergeRequest = updatedMR
-                selectedMergeRequestIid = updatedMR.iid
-                loadMergeRequestChanges(updatedMR)
+                if (selectedMergeRequestIid == updatedMR.iid) {
+                    mrDetailsPanel.setMergeRequest(updatedMR)
+                    mrDetailsPanel.setCurrentServerUrl(currentServer?.url)
+                    currentSelectedMergeRequest = updatedMR
+                    selectedMergeRequestIid = updatedMR.iid
+                    loadMergeRequestChanges(updatedMR)
+                }
+                if (updatedMR.state == MergeRequestState.CHECKING) {
+                    ensurePollingMergeRequest(updatedMR.iid)
+                } else {
+                    stopPollingMergeRequest(updatedMR.iid)
+                }
             }
         }
 
@@ -1013,6 +1152,7 @@ class GitLabToolWindowContent(
             filteredMergeRequests = filteredMergeRequests.filter { it.iid != mr.iid }
             // 从列表 UI 中移除
             mrListPanel.removeMergeRequest(mr.iid)
+            stopPollingMergeRequest(mr.iid)
         }
 
         private fun loadMergeRequestChanges(mr: GitLabMergeRequest) {

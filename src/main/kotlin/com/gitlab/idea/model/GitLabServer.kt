@@ -80,6 +80,7 @@ data class GitLabProject(
  */
 enum class MergeRequestState(val displayName: String) {
     OPENED("待合并"),
+    CHECKING("检查中"),
     CLOSED("已关闭"),
     LOCKED("有冲突"),
     MERGED("已合并");
@@ -101,6 +102,8 @@ data class GitLabMergeRequest(
     val title: String,
     val description: String?,
     val state: MergeRequestState,
+    val mergeStatusRaw: String? = null,
+    val detailedMergeStatusRaw: String? = null,
     val sourceBranch: String,
     val targetBranch: String,
     val author: GitLabUser,

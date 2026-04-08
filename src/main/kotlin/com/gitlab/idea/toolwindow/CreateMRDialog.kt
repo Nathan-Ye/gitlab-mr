@@ -57,6 +57,7 @@ class CreateMRDialog(
     private var isTitleManuallyEdited = false
     private var isDescriptionManuallyEdited = false
     private var lastAutoFilledBranch: String? = null
+    private var createdMergeRequest: CreateMergeRequestResponse? = null
 
     // API客户端
     private val apiClient: GitLabApiClient = GitLabApiClient.create(server, project)
@@ -645,6 +646,7 @@ class CreateMRDialog(
                 ApplicationManager.getApplication().invokeLater {
                     if (response.success && response.data != null) {
                         val mr = response.data
+                        createdMergeRequest = mr
                         GitLabNotifications.showSuccess(
                             project,
                             "创建成功",
@@ -673,4 +675,6 @@ class CreateMRDialog(
             }
         })
     }
+
+    fun getCreatedMergeRequest(): CreateMergeRequestResponse? = createdMergeRequest
 }
