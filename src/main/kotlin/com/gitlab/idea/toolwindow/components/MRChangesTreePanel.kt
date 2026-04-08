@@ -184,7 +184,13 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
     }
 
     private fun toSwingNode(node: ModuleTreeNode): DefaultMutableTreeNode {
-        val swingNode = DefaultMutableTreeNode(DirectoryNode(node.name, node.isModule))
+        val swingNode = DefaultMutableTreeNode(
+            DirectoryNode(
+                displayName = node.name,
+                isModule = node.isModule,
+                fileCount = node.totalFileCount
+            )
+        )
 
         node.directories.values.forEach { child ->
             swingNode.add(toSwingNode(child))
@@ -224,9 +230,16 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
     private class ModuleTreeNode(var name: String, val isModule: Boolean = false) {
         val directories = linkedMapOf<String, ModuleTreeNode>()
         val files = mutableListOf<GitLabMergeRequestChangeFile>()
+
+        val totalFileCount: Int
+            get() = files.size + directories.values.sumOf { it.totalFileCount }
     }
 
-    private data class DirectoryNode(val displayName: String, val isModule: Boolean)
+    private data class DirectoryNode(
+        val displayName: String,
+        val isModule: Boolean,
+        val fileCount: Int
+    )
 
     private data class FileNode(val changeFile: GitLabMergeRequestChangeFile) {
         val fileName: String
@@ -253,6 +266,7 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
         private fun renderDirectory(node: DirectoryNode) {
             icon = if (node.isModule) AllIcons.Nodes.Module else AllIcons.Nodes.Folder
             append(node.displayName, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+            append(" (${node.fileCount}个文件)", SimpleTextAttributes.GRAYED_ATTRIBUTES)
         }
 
         private fun renderFile(node: FileNode) {
