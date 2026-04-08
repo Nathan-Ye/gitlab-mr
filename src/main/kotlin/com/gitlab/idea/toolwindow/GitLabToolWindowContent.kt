@@ -14,6 +14,7 @@ import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.ui.DialogWrapper.OK_EXIT_CODE
 import com.intellij.ui.JBColor
@@ -62,6 +63,7 @@ class GitLabToolWindowContent(
     private var isLoadingMore: Boolean = false
     private var currentApiClient: GitLabApiClient? = null
     private var currentProjectId: String? = null
+    private var currentRepositoryRoot: VirtualFile? = null
     private var mergeRequestChangesJob: Job? = null
     private var refreshMergeRequestJob: Job? = null
     private var selectedMergeRequestIid: Long? = null
@@ -245,6 +247,8 @@ class GitLabToolWindowContent(
                 // 策略 1: 从 Git 远程 URL 自动检测项目路径（主要方法）
                 val repository = GitUtil.getMainRepository(project)
                 if (repository != null) {
+                    currentRepositoryRoot = repository.root
+                    mainContentPanel.setRepositoryRoot(repository.root)
                     val remoteUrl = GitUtil.getRemoteUrl(repository)
                     if (remoteUrl != null) {
                         val projectPath = GitUtil.extractProjectPathFromUrl(remoteUrl)
@@ -259,6 +263,9 @@ class GitLabToolWindowContent(
                         }
                     }
                 }
+
+                currentRepositoryRoot = null
+                mainContentPanel.setRepositoryRoot(null)
 
                 // 策略 2: 降级 - 提示用户配置 Git 远程
                 showError(
@@ -704,7 +711,7 @@ class GitLabToolWindowContent(
             mrListPanel = MRListPanel()
 
             // 创建MR详情面板
-            mrDetailsPanel = MRDetailsPanel()
+            mrDetailsPanel = MRDetailsPanel(project)
 
             // 使用 IDEA 原生分割面板
             val splitter = com.intellij.ui.JBSplitter(false, 0.6f)
@@ -757,10 +764,16 @@ class GitLabToolWindowContent(
         fun updateMRDetails(mr: GitLabMergeRequest) {
             // 设置当前服务器 URL，用于"在GitLab中打开"功能
             mrDetailsPanel.setCurrentServerUrl(currentServer?.url)
+            mrDetailsPanel.setRepositoryRoot(currentRepositoryRoot)
             mrDetailsPanel.setMergeRequest(mr)
             currentSelectedMergeRequest = mr
             selectedMergeRequestIid = mr.iid
             loadMergeRequestChanges(mr)
+        }
+
+        fun setRepositoryRoot(root: VirtualFile?) {
+            currentRepositoryRoot = root
+            mrDetailsPanel.setRepositoryRoot(root)
         }
 
         fun updateLoadMoreStatus(hasMore: Boolean) {

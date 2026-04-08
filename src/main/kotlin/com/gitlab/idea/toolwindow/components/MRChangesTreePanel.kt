@@ -1,10 +1,8 @@
 package com.gitlab.idea.toolwindow.components
 
 import com.gitlab.idea.model.GitLabMergeRequestChangeFile
-import com.gitlab.idea.model.GitLabMergeRequestChangeType
-import com.intellij.icons.AllIcons
-import com.intellij.openapi.fileTypes.FileTypeManager
-import com.intellij.openapi.vcs.FileStatus
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.JBColor
 import com.intellij.ui.ScrollPaneFactory
@@ -23,16 +21,21 @@ import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreeSelectionModel
 
-class MRChangesTreePanel : JPanel(BorderLayout()) {
+class MRChangesTreePanel(
+    project: Project
+) : JPanel(BorderLayout()) {
 
     private val cardLayout = CardLayout()
     private val cardPanel = JPanel(cardLayout)
     private val treeRoot = DefaultMutableTreeNode(RootNode)
     private val treeModel = DefaultTreeModel(treeRoot)
     private val changesTree = Tree(treeModel)
-    private val loadingLabel = createStatusLabel("正在加载改动文件...")
-    private val emptyLabel = createStatusLabel("当前合并请求没有改动文件")
-    private val errorLabel = createStatusLabel("改动文件加载失败")
+    private val loadingLabel = createStatusLabel("正在加载变更文件...")
+    private val emptyLabel = createStatusLabel("暂无可展示的变更文件")
+    private val errorLabel = createStatusLabel("变更文件加载失败")
+    private val iconResolver: ChangeTreeIconResolver = DefaultChangeTreeIconResolver(project)
+
+    private var repositoryRoot: VirtualFile? = null
 
     var onFileSelected: ((GitLabMergeRequestChangeFile) -> Unit)? = null
     var onFileDoubleClicked: ((GitLabMergeRequestChangeFile) -> Unit)? = null
@@ -45,11 +48,11 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
         changesTree.background = UIUtil.getPanelBackground()
         changesTree.border = JBUI.Borders.empty(8)
         changesTree.selectionModel.selectionMode = TreeSelectionModel.SINGLE_TREE_SELECTION
-        changesTree.cellRenderer = ChangesTreeRenderer()
+        changesTree.cellRenderer = ChangesTreeRenderer(iconResolver)
         changesTree.addTreeSelectionListener {
             val node = changesTree.lastSelectedPathComponent as? DefaultMutableTreeNode ?: return@addTreeSelectionListener
             val fileNode = node.userObject as? FileNode ?: return@addTreeSelectionListener
-            onFileSelected?.invoke(fileNode.changeFile)
+            onFileSelected?.invoke(fileNode.context.changeFile)
         }
         changesTree.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
@@ -58,7 +61,7 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
                 val path = changesTree.getPathForLocation(e.x, e.y) ?: return
                 val node = path.lastPathComponent as? DefaultMutableTreeNode ?: return
                 val fileNode = node.userObject as? FileNode ?: return
-                onFileDoubleClicked?.invoke(fileNode.changeFile)
+                onFileDoubleClicked?.invoke(fileNode.context.changeFile)
             }
         })
 
@@ -75,11 +78,16 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
         showEmpty()
     }
 
+    fun setRepositoryRoot(root: VirtualFile?) {
+        repositoryRoot = root
+        iconResolver.clearCache()
+    }
+
     fun showLoading() {
         cardLayout.show(cardPanel, "LOADING")
     }
 
-    fun showEmpty(message: String = "当前合并请求没有改动文件") {
+    fun showEmpty(message: String = "暂无可展示的变更文件") {
         emptyLabel.text = message
         cardLayout.show(cardPanel, "EMPTY")
     }
@@ -90,6 +98,7 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
     }
 
     fun setChanges(changes: List<GitLabMergeRequestChangeFile>) {
+        iconResolver.clearCache()
         rebuildTree(changes)
         if (treeRoot.childCount == 0) {
             showEmpty()
@@ -119,14 +128,22 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
     private fun rebuildTree(changes: List<GitLabMergeRequestChangeFile>) {
         treeRoot.removeAllChildren()
 
-        val moduleRoots = linkedMapOf<String, ModuleTreeNode>()
+        val moduleRoots = linkedMapOf<String, DirectoryTreeNode>()
         for (change in changes.sortedBy { it.path.lowercase() }) {
-            val segments = change.path.split('/').filter { it.isNotBlank() }
+            val relativePath = normalizeRelativePath(change.path) ?: continue
+            val segments = relativePath.split('/').filter { it.isNotBlank() }
             if (segments.isEmpty()) continue
 
             val moduleName = segments.first()
-            val moduleNode = moduleRoots.getOrPut(moduleName) { ModuleTreeNode(moduleName, isModule = true) }
-            insertChange(moduleNode, segments.drop(1), change)
+            val moduleNode = moduleRoots.getOrPut(moduleName) {
+                DirectoryTreeNode(
+                    displayName = moduleName,
+                    relativePath = moduleName,
+                    isModuleGroup = true,
+                    localVirtualFile = resolveLocalFile(moduleName)
+                )
+            }
+            insertChange(moduleNode, relativePath, segments.drop(1), change)
         }
 
         moduleRoots.values.forEach { moduleNode ->
@@ -137,35 +154,68 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
         treeModel.reload()
     }
 
-    private fun insertChange(moduleNode: ModuleTreeNode, relativeSegments: List<String>, change: GitLabMergeRequestChangeFile) {
+    private fun insertChange(
+        moduleNode: DirectoryTreeNode,
+        changeRelativePath: String,
+        relativeSegments: List<String>,
+        change: GitLabMergeRequestChangeFile
+    ) {
         if (relativeSegments.isEmpty()) {
-            moduleNode.files.add(change)
+            moduleNode.files.add(createFileNodeContext(change, changeRelativePath))
             return
         }
 
+        val fileName = changeRelativePath.substringAfterLast('/')
+        val directorySegments = changeRelativePath.removeSuffix("/$fileName")
+            .split('/')
+            .drop(1)
+            .filter { it.isNotBlank() }
+
         var currentNode = moduleNode
-        val directorySegments = relativeSegments.dropLast(1)
+        val pathBuilder = mutableListOf(moduleNode.displayName)
         for (segment in directorySegments) {
-            currentNode = currentNode.directories.getOrPut(segment) { ModuleTreeNode(segment) }
+            pathBuilder += segment
+            val currentRelativePath = pathBuilder.joinToString("/")
+            currentNode = currentNode.directories.getOrPut(segment) {
+                DirectoryTreeNode(
+                    displayName = segment,
+                    relativePath = currentRelativePath,
+                    isModuleGroup = false,
+                    localVirtualFile = resolveLocalFile(currentRelativePath)
+                )
+            }
         }
-        currentNode.files.add(change)
+        currentNode.files.add(createFileNodeContext(change, changeRelativePath))
     }
 
-    private fun compressDirectoryChain(node: ModuleTreeNode) {
-        val compressedDirectories = linkedMapOf<String, ModuleTreeNode>()
+    private fun createFileNodeContext(
+        change: GitLabMergeRequestChangeFile,
+        relativePath: String
+    ): FileNodeContext {
+        val displayName = relativePath.substringAfterLast('/')
+        return FileNodeContext(
+            changeFile = change,
+            displayName = displayName,
+            relativePath = relativePath,
+            localVirtualFile = resolveLocalFile(relativePath)
+        )
+    }
+
+    private fun compressDirectoryChain(node: DirectoryTreeNode) {
+        val compressedDirectories = linkedMapOf<String, DirectoryTreeNode>()
 
         for ((name, child) in node.directories.toSortedMap(String.CASE_INSENSITIVE_ORDER)) {
             compressDirectoryChain(child)
             val mergedChild = mergeSingleDirectoryChain(name, child)
-            compressedDirectories[mergedChild.name] = mergedChild
+            compressedDirectories[mergedChild.displayName] = mergedChild
         }
 
         node.directories.clear()
         node.directories.putAll(compressedDirectories)
-        node.files.sortBy { it.path.substringAfterLast('/').lowercase() }
+        node.files.sortBy { it.displayName.lowercase() }
     }
 
-    private fun mergeSingleDirectoryChain(name: String, node: ModuleTreeNode): ModuleTreeNode {
+    private fun mergeSingleDirectoryChain(name: String, node: DirectoryTreeNode): DirectoryTreeNode {
         var mergedName = name
         var currentNode = node
 
@@ -175,26 +225,51 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
             currentNode = nextEntry.value
         }
 
-        if (mergedName == currentNode.name) return currentNode
+        if (mergedName == currentNode.displayName) return currentNode
 
-        return ModuleTreeNode(mergedName).also { mergedNode ->
+        return DirectoryTreeNode(
+            displayName = mergedName,
+            relativePath = currentNode.relativePath,
+            isModuleGroup = currentNode.isModuleGroup,
+            localVirtualFile = currentNode.localVirtualFile
+        ).also { mergedNode ->
             mergedNode.directories.putAll(currentNode.directories)
             mergedNode.files.addAll(currentNode.files)
         }
     }
 
-    private fun toSwingNode(node: ModuleTreeNode): DefaultMutableTreeNode {
-        val swingNode = DefaultMutableTreeNode(DirectoryNode(node.name, node.isModule))
+    private fun toSwingNode(node: DirectoryTreeNode): DefaultMutableTreeNode {
+        val swingNode = DefaultMutableTreeNode(
+            DirectoryNodeContext(
+                displayName = node.displayName,
+                relativePath = node.relativePath,
+                isModuleGroup = node.isModuleGroup,
+                fileCount = node.totalFileCount,
+                localVirtualFile = node.localVirtualFile
+            )
+        )
 
         node.directories.values.forEach { child ->
             swingNode.add(toSwingNode(child))
         }
 
-        node.files.forEach { change ->
-            swingNode.add(DefaultMutableTreeNode(FileNode(change)))
+        node.files.forEach { file ->
+            swingNode.add(DefaultMutableTreeNode(FileNode(file)))
         }
 
         return swingNode
+    }
+
+    private fun resolveLocalFile(relativePath: String?): VirtualFile? {
+        val normalizedPath = normalizeRelativePath(relativePath) ?: return null
+        return repositoryRoot?.findFileByRelativePath(normalizedPath)
+    }
+
+    private fun normalizeRelativePath(path: String?): String? {
+        return path
+            ?.replace('\\', '/')
+            ?.trim('/')
+            ?.takeIf { it.isNotBlank() }
     }
 
     private fun expandAll() {
@@ -221,19 +296,24 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
 
     private object RootNode
 
-    private class ModuleTreeNode(var name: String, val isModule: Boolean = false) {
-        val directories = linkedMapOf<String, ModuleTreeNode>()
-        val files = mutableListOf<GitLabMergeRequestChangeFile>()
+    private class DirectoryTreeNode(
+        var displayName: String,
+        val relativePath: String?,
+        val isModuleGroup: Boolean,
+        val localVirtualFile: VirtualFile?
+    ) {
+        val directories = linkedMapOf<String, DirectoryTreeNode>()
+        val files = mutableListOf<FileNodeContext>()
+
+        val totalFileCount: Int
+            get() = files.size + directories.values.sumOf { it.totalFileCount }
     }
 
-    private data class DirectoryNode(val displayName: String, val isModule: Boolean)
+    private data class FileNode(val context: FileNodeContext)
 
-    private data class FileNode(val changeFile: GitLabMergeRequestChangeFile) {
-        val fileName: String
-            get() = changeFile.path.substringAfterLast('/')
-    }
-
-    private class ChangesTreeRenderer : ColoredTreeCellRenderer() {
+    private class ChangesTreeRenderer(
+        private val iconResolver: ChangeTreeIconResolver
+    ) : ColoredTreeCellRenderer() {
         override fun customizeCellRenderer(
             tree: javax.swing.JTree,
             value: Any?,
@@ -245,32 +325,23 @@ class MRChangesTreePanel : JPanel(BorderLayout()) {
         ) {
             val node = value as? DefaultMutableTreeNode ?: return
             when (val userObject = node.userObject) {
-                is DirectoryNode -> renderDirectory(userObject)
-                is FileNode -> renderFile(userObject)
+                is DirectoryNodeContext -> renderDirectory(userObject, expanded)
+                is FileNode -> renderFile(userObject.context)
             }
         }
 
-        private fun renderDirectory(node: DirectoryNode) {
-            icon = if (node.isModule) AllIcons.Nodes.Module else AllIcons.Nodes.Folder
+        private fun renderDirectory(node: DirectoryNodeContext, expanded: Boolean) {
+            icon = iconResolver.resolveDirectoryIcon(node, expanded)
             append(node.displayName, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+            append(" (${node.fileCount}个文件)", SimpleTextAttributes.GRAYED_ATTRIBUTES)
         }
 
-        private fun renderFile(node: FileNode) {
-            val fileType = FileTypeManager.getInstance().getFileTypeByFileName(node.fileName)
-            icon = fileType.icon
+        private fun renderFile(node: FileNodeContext) {
+            icon = iconResolver.resolveFileIcon(node)
             append(
-                node.fileName,
-                SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, getFileStatus(node.changeFile.changeType).color)
+                node.displayName,
+                SimpleTextAttributes(SimpleTextAttributes.STYLE_PLAIN, fileStatusForChangeType(node.changeFile.changeType).color)
             )
-        }
-
-        private fun getFileStatus(changeType: GitLabMergeRequestChangeType): FileStatus {
-            return when (changeType) {
-                GitLabMergeRequestChangeType.ADDED -> FileStatus.ADDED
-                GitLabMergeRequestChangeType.MODIFIED -> FileStatus.MODIFIED
-                GitLabMergeRequestChangeType.DELETED -> FileStatus.DELETED
-                GitLabMergeRequestChangeType.RENAMED -> FileStatus.MODIFIED
-            }
         }
     }
 }

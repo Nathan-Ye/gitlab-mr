@@ -3,6 +3,8 @@ package com.gitlab.idea.toolwindow.components
 import com.gitlab.idea.model.GitLabMergeRequest
 import com.gitlab.idea.model.GitLabMergeRequestChangeFile
 import com.gitlab.idea.model.MergeRequestState
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.ui.JBColor
 import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.TitledSeparator
@@ -28,7 +30,7 @@ import javax.swing.*
  * 合并请求详情面板
  * 显示单个MR的完整信息
  */
-class MRDetailsPanel : JPanel() {
+class MRDetailsPanel(project: Project) : JPanel() {
 
     private val mainPanel = JPanel()
     private val titleLabel = JBTextArea()
@@ -61,7 +63,7 @@ class MRDetailsPanel : JPanel() {
     private val outerCardPanel = JPanel(outerCardLayout)
     private val emptyStateOuterPanel = JPanel()
     private val tabbedPane: JTabbedPane
-    private val changesTreePanel = MRChangesTreePanel()
+    private val changesTreePanel = MRChangesTreePanel(project)
 
     init {
         layout = BorderLayout()
@@ -472,6 +474,10 @@ class MRDetailsPanel : JPanel() {
 
     fun setMergeRequestChanges(changes: List<GitLabMergeRequestChangeFile>) {
         changesTreePanel.setChanges(changes)
+    }
+
+    fun setRepositoryRoot(root: VirtualFile?) {
+        changesTreePanel.setRepositoryRoot(root)
     }
 
     fun setMergeRequestChangesError(message: String?) {
