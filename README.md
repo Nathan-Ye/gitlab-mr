@@ -2,7 +2,7 @@
 
 `GitLab MR` 是一个 IntelliJ IDEA 插件，用于在 IDE 内查看和操作 GitLab Merge Requests。
 
-当前版本：`2.0.0`
+当前版本：`2.1.1`
 
 ## 主要能力
 
