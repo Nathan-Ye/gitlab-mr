@@ -14,11 +14,14 @@
     ]]></description>
 
     <change-notes><![CDATA[
-        <h3>Version 2.1.1</h3>
+        <h3>Version 2.2.0</h3>
         <ul>
-            <li>Optimized MR change file tree display with VirtualFile support and icon caching</li>
-            <li>Added file count display for directory nodes in change tree</li>
-            <li>Localized MR state display names to Chinese</li>
+            <li>新增合并请求检查状态轮询功能：当 MR 处于检查中状态时自动轮询更新</li>
+            <li>支持 checking、preparing、unchecked、approvals_syncing 等检查中状态识别</li>
+            <li>新增 CHECKING("检查中") 状态，与"待合并"一并显示</li>
+            <li>创建 MR 后自动跟踪状态直至检查完成</li>
+            <li>版本控制机制防止旧请求覆盖新数据</li>
+            <li>窗口关闭时自动清理所有轮询任务</li>
         </ul>
     ]]></change-notes>
 
