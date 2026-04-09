@@ -298,7 +298,6 @@ src/main/
 ## 下一步
 
 - 📖 阅读完整功能文档：[README.md](README.md)
-- 🔧 查看开发指南：[DEVELOPMENT.md](DEVELOPMENT.md)
 - 🐛 报告问题：GitHub Issues
 
 **祝开发愉快！** 🚀
