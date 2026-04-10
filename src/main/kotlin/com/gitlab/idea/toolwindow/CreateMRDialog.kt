@@ -38,7 +38,8 @@ class CreateMRDialog(
     private val server: GitLabServer,
     private val projectId: String,
     preloadedBranches: List<GitLabBranch>? = null,
-    preloadedMembers: List<GitLabMember>? = null
+    preloadedMembers: List<GitLabMember>? = null,
+    private val onMergeRequestCreated: ((CreateMergeRequestResponse) -> Unit)? = null
 ) : DialogWrapper(project, true) {
 
     // UI组件
@@ -57,7 +58,6 @@ class CreateMRDialog(
     private var isTitleManuallyEdited = false
     private var isDescriptionManuallyEdited = false
     private var lastAutoFilledBranch: String? = null
-    private var createdMergeRequest: CreateMergeRequestResponse? = null
 
     // API客户端
     private val apiClient: GitLabApiClient = GitLabApiClient.create(server, project)
@@ -582,6 +582,13 @@ class CreateMRDialog(
     }
 
     override fun doOKAction() {
+        val validationInfo = doValidate()
+        if (validationInfo != null) {
+            setErrorText(validationInfo.message, validationInfo.component)
+            return
+        }
+        setErrorText(null)
+
         val sourceBranch = (sourceBranchField.selectedItem as? String)?.trim() ?: ""
 
         val targetBranch = (targetBranchField.selectedItem as? String)?.trim() ?: ""
@@ -591,8 +598,10 @@ class CreateMRDialog(
         val assigneeId = getSelectedAssigneeId()
         val removeSourceBranch = removeSourceBranchCheckbox.isSelected
 
+        close(OK_EXIT_CODE)
+
         // 在后台验证分支并创建MR
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "创建合并请求", true) {
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "创建合并请求", false) {
             override fun run(indicator: ProgressIndicator) {
                 indicator.isIndeterminate = true
 
@@ -646,13 +655,12 @@ class CreateMRDialog(
                 ApplicationManager.getApplication().invokeLater {
                     if (response.success && response.data != null) {
                         val mr = response.data
-                        createdMergeRequest = mr
                         GitLabNotifications.showSuccess(
                             project,
                             "创建成功",
                             "合并请求 !${mr.iid} \"${mr.title}\" 已创建\n${mr.webUrl}"
                         )
-                        close(OK_EXIT_CODE)
+                        onMergeRequestCreated?.invoke(mr)
                     } else {
                         GitLabNotifications.showError(
                             project,
@@ -675,6 +683,4 @@ class CreateMRDialog(
             }
         })
     }
-
-    fun getCreatedMergeRequest(): CreateMergeRequestResponse? = createdMergeRequest
 }

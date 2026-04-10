@@ -16,7 +16,6 @@ import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
-import com.intellij.openapi.ui.DialogWrapper.OK_EXIT_CODE
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.*
@@ -759,17 +758,14 @@ class GitLabToolWindowContent(
                             server,
                             gitProject.id.toString(),
                             preloadedBranches = branchesResponse.data,
-                            preloadedMembers = membersResponse.data
+                            preloadedMembers = membersResponse.data,
+                            onMergeRequestCreated = { createdMr ->
+                                refreshMergeRequestsSilently()
+                                trackCreatedMergeRequest(createdMr.iid)
+                            }
                         )
                         dialog.show()
 
-                        // 如果成功创建，无感刷新MR列表
-                        if (dialog.exitCode == OK_EXIT_CODE) {
-                            refreshMergeRequestsSilently()
-                            dialog.getCreatedMergeRequest()?.let { createdMr ->
-                                trackCreatedMergeRequest(createdMr.iid)
-                            }
-                        }
                     }
                 }
             } catch (e: TimeoutCancellationException) {
