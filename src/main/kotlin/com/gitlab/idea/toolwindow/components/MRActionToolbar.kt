@@ -116,7 +116,9 @@ class MRActionToolbar : JPanel() {
 
         override fun update(e: AnActionEvent) {
             val mr = currentMR
-            e.presentation.isEnabled = !isRefreshing && mr?.state == MergeRequestState.OPENED
+            e.presentation.isEnabled = !isRefreshing && (
+                mr?.state == MergeRequestState.OPENED || mr?.state == MergeRequestState.LOCKED
+            )
         }
     }
 
