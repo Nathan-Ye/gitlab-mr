@@ -88,7 +88,7 @@ class MRListPanel : JPanel() {
         // 范围下拉筛选
         val scopeLabel = JLabel("范围:")
         scopeLabel.font = scopeLabel.font.deriveFont(Font.PLAIN, 12f)
-        scopeFilter = JComboBox(arrayOf("ALL", "CREATEDBY_ME", "ASSIGNEDTO_ME"))
+        scopeFilter = JComboBox(arrayOf("全部", "我创建的", "指派给我的"))
         scopeFilter.preferredSize = Dimension(130, 36)
         scopeFilter.maximumSize = Dimension(130, 36)
         scopeFilter.addActionListener {
@@ -328,8 +328,8 @@ class MRListPanel : JPanel() {
 
         val scopeText = scopeFilter.selectedItem as String
         val scope = when (scopeText) {
-            "CREATEDBY_ME" -> "created_by_me"
-            "ASSIGNEDTO_ME" -> "assigned_to_me"
+            "我创建的" -> "created_by_me"
+            "指派给我的" -> "assigned_to_me"
             else -> null
         }
 
