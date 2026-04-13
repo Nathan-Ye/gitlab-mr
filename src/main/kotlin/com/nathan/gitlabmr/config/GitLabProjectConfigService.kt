@@ -15,7 +15,7 @@ import com.intellij.openapi.project.Project
 @Service(Service.Level.PROJECT)
 @State(
     name = "GitLabProjectConfigService",
-    storages = [Storage("GitLabProjectConfig.xml")]
+    storages = [Storage("GitLabMRProjectConfig.xml")]
 )
 class GitLabProjectConfigService : PersistentStateComponent<GitLabProjectConfigService.State> {
 

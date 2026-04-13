@@ -78,11 +78,11 @@ gradlew.bat clean
 
 **Configuration System:**
 - `GitLabConfigService.kt` - `PersistentStateComponent` storing `GitLabServer` configs
-  - Application-level storage: `GitLabConfig.xml` (IDEA全局配置目录)
+  - Application-level storage: `GitLabMRConfig.xml` (IDEA全局配置目录)
   - Methods: `addServer()`, `removeServer()`, `getSelectedServer()`, `setSelectedServer()`, `clearAllDefaultServers()`, `getDefaultServers()`
   - Adding a default server automatically clears other defaults, ensuring only one default server
 - `GitLabProjectConfigService.kt` - Project-level storage
-  - Storage: `GitLabProjectConfig.xml` in project `.idea/` folder
+  - Storage: `GitLabMRProjectConfig.xml` in project `.idea/` folder
   - Methods: `addServer()`, `updateServer()`, `removeServer()`, `getSelectedServer()`, `setSelectedServer()`
   - Adding a server with duplicate URL updates instead of duplicating
 - `GitLabConfigurable.kt` - Global settings UI (application-level)
@@ -158,14 +158,18 @@ gradlew.bat clean
 ### Server Configuration Storage
 
 - **Application-level (default server)**:
-  - File: `GitLabConfig.xml` in IDEA options directory
-  - Example: `%APPDATA%\JetBrains\IDEA2025.1\options\GitLabConfig.xml`
+  - File: `GitLabMRConfig.xml` in IDEA options directory
+  - Example: `%APPDATA%\JetBrains\IDEA2025.1\options\GitLabMRConfig.xml`
   - Shared across all projects
 
 - **Project-level**:
-  - File: `GitLabProjectConfig.xml` in project `.idea/` folder
-  - Example: `<ProjectPath>\.idea\GitLabProjectConfig.xml`
+  - File: `GitLabMRProjectConfig.xml` in project `.idea/` folder
+  - Example: `<ProjectPath>\.idea\GitLabMRProjectConfig.xml`
   - Only for current project
+
+- **Compatibility note**:
+  - Current implementation does not migrate old names automatically.
+  - Existing `GitLabConfig.xml` / `GitLabProjectConfig.xml` are not read after the rename.
 
 - **Key behaviors**:
   - Only one default server allowed (checking "Set as default" clears other defaults)

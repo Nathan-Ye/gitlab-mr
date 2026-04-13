@@ -217,8 +217,13 @@ Two persistent services exist:
 
 Storage files:
 
-- `GitLabConfig.xml`
-- `GitLabProjectConfig.xml`
+- `GitLabMRConfig.xml`
+- `GitLabMRProjectConfig.xml`
+
+Migration note:
+
+- Current behavior does **not** provide compatibility migration from old file names.
+- Existing `GitLabConfig.xml` / `GitLabProjectConfig.xml` are not auto-loaded by current code.
 
 Behavior differences:
 
