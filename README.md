@@ -10,7 +10,7 @@
 
 前往 [Releases](https://github.com/Nathan-Ye/gitlab-mr/releases) 页面下载编译好的 ZIP 安装包。
 
-插件文件: `build/distributions/gitlab-idea-plugin-2.2.0.zip`
+插件文件: `build/distributions/gitlab-mr-[version].zip`
 
 **安装方式**:
 1. 下载 ZIP 包
@@ -130,7 +130,7 @@ gradlew.bat buildPlugin
 ./gradlew buildPlugin
 ```
 
-构建产物: `build/distributions/gitlab-idea-plugin-2.2.0.zip`
+构建产物: `build/distributions/gitlab-mr-[version].zip`
 
 清理: `./gradlew clean`
 

@@ -1,1 +1,1 @@
-rootProject.name = "gitlab-idea-plugin"
+rootProject.name = "gitlab-mr"

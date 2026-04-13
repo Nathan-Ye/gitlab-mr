@@ -9,7 +9,7 @@ This is an IntelliJ IDEA plugin that integrates GitLab Merge Request (MR) functi
 **Technology Stack:**
 - Kotlin 2.1.0
 - IntelliJ Platform 2024.2+ (IDEA Community compatible)
-- Gradle 8.4+ with Kotlin DSL
+- Gradle 8.13 with Kotlin DSL
 - OkHttp 4.12.0 for HTTP
 - Gson 2.10.1 for JSON
 - Kotlin Coroutines for async operations
@@ -25,10 +25,10 @@ gradlew.bat buildPlugin
 ./gradlew buildPlugin
 ```
 
-Output: `build/distributions/gitlab-idea-plugin-2.0.0.zip`
+Output: `build/distributions/gitlab-mr-[version].zip`
 
 ### Running the Plugin in Development
-1. Open project in IntelliJ IDEA (2023.2+)
+1. Open project in IntelliJ IDEA (2024.2+)
 2. Configure SDK: File → Project Structure → Project → SDK: Java 17
 3. Run → Edit Configurations → Add "Plugin" configuration
 4. Click Run (Shift+F10) - launches a sandbox IDEA instance with plugin loaded
@@ -36,11 +36,6 @@ Output: `build/distributions/gitlab-idea-plugin-2.0.0.zip`
 ### Cleaning
 ```bash
 gradlew.bat clean
-```
-
-### Verifying Build
-```bash
-verify.bat    # Windows script that runs clean buildPlugin
 ```
 
 ## Architecture
@@ -57,8 +52,12 @@ verify.bat    # Windows script that runs clean buildPlugin
 - `GitLabToolWindowContent.kt` - Main content manager using CardLayout to switch between:
   - Empty state (`EmptyStatePanel`) - No servers configured
   - Error state (`ErrorStatePanel`) - Loading/connection failures
+  - Loading state (`LoadingStatePanel`) - Initial data loading
   - Main content (`MainContentPanel`) - MR list + details split pane
 - `GitLabServerDialog.kt` - Dialog for adding/editing GitLab servers
+- `CreateMRDialog.kt` - Dialog for creating new Merge Requests
+- `MRDiffService.kt` - Integrates with IntelliJ's native Diff viewer
+- `ToolWindowMutexManager.kt` - Manages tool window activation mutex
 
 **API Layer:**
 - `GitLabApiClient.kt` - Single-class REST API client using OkHttp
@@ -71,54 +70,66 @@ verify.bat    # Windows script that runs clean buildPlugin
     - `getAllMergeRequests()` - Auto-paginates to fetch all MRs
     - `getMergeRequestChanges(projectId, mrIid)` - Gets MR change files
     - `getMergeRequestVersions(projectId, mrIid)` - Gets MR version history
+    - `createMergeRequest()` - Creates a new MR
   - Internal DTOs (`MergeResponseDto`, `AuthorDto`) convert to domain models
 - `MRDiffContentLoader.kt` - Loads diff content for MR file comparison
   - Fetches file content at specific commits for diff viewing
   - Handles binary file detection and error cases
-- `MRDiffService.kt` - Integrates with IntelliJ's native Diff viewer
-  - Creates `SimpleDiffRequest` for IntelliJ DiffManager
-  - Supports syntax highlighting based on file type
 
 **Configuration System:**
 - `GitLabConfigService.kt` - `PersistentStateComponent` storing `GitLabServer` configs
   - Application-level storage: `GitLabConfig.xml` (IDEA全局配置目录)
   - Methods: `addServer()`, `removeServer()`, `getSelectedServer()`, `setSelectedServer()`, `clearAllDefaultServers()`, `getDefaultServers()`
-  - 特性：添加默认服务器时会自动取消其他默认，确保只有一个默认服务器
+  - Adding a default server automatically clears other defaults, ensuring only one default server
 - `GitLabProjectConfigService.kt` - Project-level storage
-  - Storage: `GitLabProjectConfig.xml` (项目目录下 `.idea/` 文件夹)
+  - Storage: `GitLabProjectConfig.xml` in project `.idea/` folder
   - Methods: `addServer()`, `updateServer()`, `removeServer()`, `getSelectedServer()`, `setSelectedServer()`
-  - 特性：添加服务器时检查URL重复，避免重复配置
+  - Adding a server with duplicate URL updates instead of duplicating
 - `GitLabConfigurable.kt` - Global settings UI (application-level)
 - `GitLabProjectConfigurable.kt` - Project settings UI
+
+**Actions (`actions/`):**
+- `AddServerAction.kt` - Action to add a new GitLab server via dialog
+- `RefreshAction.kt` - Action to refresh MR data
 
 **Data Models (`model/GitLabServer.kt`):**
 - `GitLabServer` - Server config with id, name, url, token, isDefault
 - `GitLabProject` - Project info (id, name, path, webUrl, etc.)
 - `GitLabMergeRequest` - MR with all fields (state, branches, author, assignees, etc.)
-- `MergeRequestState` - Enum: OPENED, CLOSED, LOCKED, MERGED
+- `MergeRequestState` - Enum: OPENED, CLOSED, LOCKED, MERGED, CHECKING
 - `GitLabUser` - User details
+- `GitLabBranch` - Branch info
+- `GitLabMember` - Project member info
+- `CreateMergeRequestResponse` - Response from MR creation
 
 **UI Components (`toolwindow/components/`):**
 - `EmptyStatePanel.kt` - "Add GitLab Server" prompt
 - `ErrorStatePanel.kt` - Error display with retry/edit buttons
 - `LoadingStatePanel.kt` - Loading state with spinner display
 - `MRListPanel.kt` - MR list with:
-  - State filter dropdown (Opened/Closed/Locked/Merged/All)
-  - Username filter text field
+  - State filter dropdown (待合并/已关闭/有冲突/已合并/全部, 90px wide)
+  - Scope filter dropdown (全部/我创建的/指派给我的, 130px wide)
+  - Title keyword search field
   - "Load More" button for pagination
   - Clickable MR list (selects to show details)
-- `MRDetailsPanel.kt` - MR detail view with tabbed interface
+- `MRDetailsPanel.kt` - MR detail view with tabbed interface (Overview / Changes)
 - `MRChangesTreePanel.kt` - MR change file tree view
   - Hierarchical display of changed files grouped by module
   - Expand/collapse all functionality
-  - File type icons and change type indicators
+  - File type icons and change type indicators (Added/Modified/Deleted/Renamed)
   - Double-click to open native IntelliJ Diff viewer
-- `MRActionToolbar.kt` - Toolbar with MR action buttons (merge, close, etc.)
+- `MRActionToolbar.kt` - Toolbar with MR action buttons (close, merge, delete, refresh, open in browser)
 - `ToolWindowSideToolbar.kt` - Side toolbar for quick actions
+- `ChangeTreeIconResolver.kt` - Resolves icons for different file change types
 
-**Utilities:**
+**Utilities (`util/`):**
 - `GitUtil.kt` - Git repository helpers: `getRemoteUrl()`, `extractProjectPathFromUrl()`
 - `GitLabNotifications.kt` - IDEA notification wrapper
+
+**Dialogs:**
+- `GitLabServerDialog.kt` - Add/edit GitLab server configuration
+- `CreateMRDialog.kt` - Create new MR with title, description, source/target branch, assignee
+- `MRActionConfirmDialog.kt` - Confirmation dialog for destructive MR actions
 
 ### Plugin Registration (`plugin.xml`)
 - Tool window: id="GitLab", anchor="bottom", secondary=true
@@ -141,6 +152,8 @@ verify.bat    # Windows script that runs clean buildPlugin
    1. Use `server.projectPath` if configured
    2. Extract project path from Git remote URL via `GitUtil`
    3. Fallback to `getUserProjects()` and use first project
+5. On success → Fetch MRs via `getMergeRequests()` → Show `MainContentPanel`
+6. On error → Show `ErrorStatePanel`
 
 ### Server Configuration Storage
 
@@ -150,7 +163,7 @@ verify.bat    # Windows script that runs clean buildPlugin
   - Shared across all projects
 
 - **Project-level**:
-  - File: `GitLabProjectConfig.xml` in project `.idea` folder
+  - File: `GitLabProjectConfig.xml` in project `.idea/` folder
   - Example: `<ProjectPath>\.idea\GitLabProjectConfig.xml`
   - Only for current project
 
@@ -158,8 +171,6 @@ verify.bat    # Windows script that runs clean buildPlugin
   - Only one default server allowed (checking "Set as default" clears other defaults)
   - Same URL server will be updated instead of duplicated
   - Editing server preserves original ID and token
-5. On success → Fetch MRs via `getMergeRequests()` → Show `MainContentPanel`
-6. On error → Show `ErrorStatePanel`
 
 ### GitLab API Integration
 
@@ -186,6 +197,13 @@ verify.bat    # Windows script that runs clean buildPlugin
 - Double-click on file triggers native IntelliJ Diff viewer via `MRDiffService`
 - `MRDiffContentLoader` fetches file content at base and head commits for comparison
 - Binary files are detected and handled gracefully
+
+### Create MR Dialog
+
+- Pre-fills title and description from current branch's latest commit
+- Supports selecting source branch, target branch, and assignee
+- Option to delete source branch after merge
+- Integrates "Merge current branch" shortcut action
 
 ## Important Development Notes
 
@@ -215,3 +233,4 @@ verify.bat    # Windows script that runs clean buildPlugin
 - **Authentication Fallback**: `testConnection()` tries both URL parameter and header methods. Header method is more reliable for self-hosted instances.
 - **Empty State on Startup**: If no servers are configured, the tool window shows empty state. User must click "+" to add.
 - **Git Remote Matching**: Requires Git4Idea plugin. If not available, falls back to manual project selection.
+- **Multi-repository projects**: Not currently supported for automatic project resolution.
