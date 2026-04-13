@@ -19,7 +19,7 @@
 
 ### 环境要求
 
-- IntelliJ IDEA **2024.2** 或更高版本（Community 或 Ultimate 均可）
+- IntelliJ IDEA **2024.1** 或更高版本（Community 或 Ultimate 均可）
 - GitLab 服务器 (支持 gitlab.com 及私有部署版本)
 - GitLab **Personal Access Token**，推荐权限：
   ```

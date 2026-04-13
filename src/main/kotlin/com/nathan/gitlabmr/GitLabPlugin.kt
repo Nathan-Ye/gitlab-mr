@@ -14,7 +14,7 @@ import git4idea.repo.GitRepositoryManager
 class GitLabPlugin {
 
     companion object {
-        private const val PLUGIN_ID = "com.nathan.gitlabmr.integration"
+        private const val PLUGIN_ID = "com.nathan.gitlabmr"
 
         /**
          * 获取插件版本

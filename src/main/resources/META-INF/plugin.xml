@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <idea-plugin require-restart="false">
-    <id>com.nathan.gitlabmr.integration</id>
+    <id>com.nathan.gitlabmr</id>
     <name>GitLab MR</name>
     <vendor email="nathanye404@gmail.com">Nathan Ye</vendor>
 
@@ -29,7 +29,7 @@
 
 <h3>Requirements / 运行环境</h3>
 <ul>
-    <li>IntelliJ IDEA 2024.2 or later</li>
+    <li>IntelliJ IDEA 2024.1 or later</li>
     <li>GitLab account with personal access token (requires <code>api</code> scope)</li>
 </ul>
 ]]></description>
