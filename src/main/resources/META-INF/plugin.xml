@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <idea-plugin require-restart="false">
-    <id>com.gitlab.idea.integration</id>
+    <id>com.nathan.gitlabmr.integration</id>
     <name>GitLab MR</name>
     <vendor url="https://gitlab.com">GitLab Integration</vendor>
 
@@ -34,22 +34,22 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- Tool Window -->
-        <toolWindow id="GitLab" anchor="bottom" factoryClass="com.gitlab.idea.toolwindow.GitLabToolWindowFactory"
+        <toolWindow id="GitLab" anchor="bottom" factoryClass="com.nathan.gitlabmr.toolwindow.GitLabToolWindowFactory"
                     icon="/icons/gitlab.svg" order="last"/>
 
         <!-- Application Settings -->
-        <applicationConfigurable instance="com.gitlab.idea.config.GitLabConfigurable" displayName="GitLab Settings"/>
+        <applicationConfigurable instance="com.nathan.gitlabmr.config.GitLabConfigurable" displayName="GitLab Settings"/>
 
         <!-- Project Settings -->
-        <projectConfigurable instance="com.gitlab.idea.config.GitLabProjectConfigurable" displayName="GitLab Project Settings"/>
+        <projectConfigurable instance="com.nathan.gitlabmr.config.GitLabProjectConfigurable" displayName="GitLab Project Settings"/>
 
         <!-- Application Services -->
-        <applicationService id="com.gitlab.idea.GitLabApplicationService"
-                            serviceImplementation="com.gitlab.idea.GitLabApplicationService"/>
+        <applicationService id="com.nathan.gitlabmr.GitLabApplicationService"
+                            serviceImplementation="com.nathan.gitlabmr.GitLabApplicationService"/>
 
         <!-- Project Services -->
-        <projectService id="com.gitlab.idea.GitLabProjectService"
-                        serviceImplementation="com.gitlab.idea.GitLabProjectService"/>
+        <projectService id="com.nathan.gitlabmr.GitLabProjectService"
+                        serviceImplementation="com.nathan.gitlabmr.GitLabProjectService"/>
 
         <!-- Notification Group -->
         <notificationGroup id="GitLab.Notification.Group" displayType="BALLOON"/>
@@ -58,10 +58,10 @@
     <actions>
         <!-- Add action group for the plugin -->
         <group id="GitLab.Toolbar" text="GitLab Actions">
-            <action id="GitLab.Refresh" class="com.gitlab.idea.actions.RefreshAction"
+            <action id="GitLab.Refresh" class="com.nathan.gitlabmr.actions.RefreshAction"
                     text="Refresh" description="Refresh GitLab data"
                     icon="AllIcons.Actions.Refresh"/>
-            <action id="GitLab.AddServer" class="com.gitlab.idea.actions.AddServerAction"
+            <action id="GitLab.AddServer" class="com.nathan.gitlabmr.actions.AddServerAction"
                     text="Add GitLab Server" description="Add a new GitLab server"
                     icon="AllIcons.General.Add"/>
             <separator/>

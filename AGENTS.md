@@ -8,7 +8,7 @@ This file is the current repo-specific map for coding agents working in `gitlab-
 
 - Project type: IntelliJ IDEA plugin
 - Plugin name: `GitLab MR`
-- Plugin ID: `com.gitlab.idea.integration`
+- Plugin ID: `com.nathan.gitlabmr`
 - Current Gradle project version: `2.0.0`
 - Main language: Kotlin
 - Target JVM: Java 17
@@ -41,7 +41,7 @@ Compatibility metadata is now aligned:
 
 Key source roots:
 
-- `src/main/kotlin/com/gitlab/idea`
+- `src/main/kotlin/com/nathan/gitlabmr`
 - `src/main/resources/META-INF`
 - `src/main/resources/icons`
 
@@ -92,7 +92,7 @@ There is still no `src/test` tree.
 
 `plugin.xml` registers:
 
-- tool window: `com.gitlab.idea.toolwindow.GitLabToolWindowFactory`
+- tool window: `com.nathan.gitlabmr.toolwindow.GitLabToolWindowFactory`
 - application configurable: `GitLabConfigurable`
 - project configurable: `GitLabProjectConfigurable`
 - application service: `GitLabApplicationService`
@@ -331,17 +331,25 @@ If running the plugin in an IDE sandbox, validate at least:
 
 - `build.gradle.kts`
 - `src/main/resources/META-INF/plugin.xml`
-- `src/main/kotlin/com/gitlab/idea/toolwindow/GitLabToolWindowContent.kt`
-- `src/main/kotlin/com/gitlab/idea/api/GitLabApiClient.kt`
-- `src/main/kotlin/com/gitlab/idea/api/MRDiffContentLoader.kt`
-- `src/main/kotlin/com/gitlab/idea/toolwindow/MRDiffService.kt`
-- `src/main/kotlin/com/gitlab/idea/toolwindow/components/MRActionToolbar.kt`
-- `src/main/kotlin/com/gitlab/idea/toolwindow/components/MRChangesTreePanel.kt`
-- `src/main/kotlin/com/gitlab/idea/util/GitUtil.kt`
+- `src/main/kotlin/com/nathan/gitlabmr/toolwindow/GitLabToolWindowContent.kt`
+- `src/main/kotlin/com/nathan/gitlabmr/api/GitLabApiClient.kt`
+- `src/main/kotlin/com/nathan/gitlabmr/api/MRDiffContentLoader.kt`
+- `src/main/kotlin/com/nathan/gitlabmr/toolwindow/MRDiffService.kt`
+- `src/main/kotlin/com/nathan/gitlabmr/toolwindow/components/MRActionToolbar.kt`
+- `src/main/kotlin/com/nathan/gitlabmr/toolwindow/components/MRChangesTreePanel.kt`
+- `src/main/kotlin/com/nathan/gitlabmr/util/GitUtil.kt`
 
 ---
 
 ## Last Updated
 
-- Date: `2026-03-31`
+- Date: `2026-04-13`
 - Basis: direct scan of repository files, review of the latest three commits, and successful local `./gradlew.bat buildPlugin`
+
+## Package Rename (2026-04-13)
+
+Package structure changed from `com.gitlab.idea` to `com.nathan.gitlabmr`. All Kotlin source files moved to new package structure. Updated:
+
+- `build.gradle.kts` group
+- `plugin.xml` all class references
+- `AGENTS.md` all path references

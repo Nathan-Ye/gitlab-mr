@@ -94,7 +94,7 @@
 ## 项目结构
 
 ```
-src/main/kotlin/com/gitlab/idea/
+src/main/kotlin/com/nathan/gitlabmr/
 ├── GitLabPlugin.kt              # 插件主类与生命周期
 ├── GitLabApplicationService.kt  # 应用级服务
 ├── GitLabProjectService.kt      # 项目级服务
