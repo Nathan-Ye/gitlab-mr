@@ -89,8 +89,8 @@ class MRListPanel : JPanel() {
         val scopeLabel = JLabel("范围:")
         scopeLabel.font = scopeLabel.font.deriveFont(Font.PLAIN, 12f)
         scopeFilter = JComboBox(arrayOf("全部", "我创建的", "指派给我的"))
-        scopeFilter.preferredSize = Dimension(130, 36)
-        scopeFilter.maximumSize = Dimension(130, 36)
+        scopeFilter.preferredSize = Dimension(110, 36)
+        scopeFilter.maximumSize = Dimension(110, 36)
         scopeFilter.addActionListener {
             applyFilters()
         }
