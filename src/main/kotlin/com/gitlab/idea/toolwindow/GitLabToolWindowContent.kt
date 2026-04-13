@@ -10,6 +10,7 @@ import com.gitlab.idea.util.GitLabNotifications
 import com.gitlab.idea.util.GitUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
@@ -71,6 +72,7 @@ class GitLabToolWindowContent(
     private var selectedMergeRequestIid: Long? = null
     private var currentSelectedMergeRequest: GitLabMergeRequest? = null
     private var openDiffJob: Job? = null
+    private var currentFilterQueryIndicator: ProgressIndicator? = null
 
     // 筛选条件
     private var filterState: MergeRequestState? = null
@@ -239,13 +241,13 @@ class GitLabToolWindowContent(
         showCard(CardState.LOADING)
 
         // 重置分页状态
-        currentPage = 1
-        hasMore = true
-        mergeRequests.clear()
-        filteredMergeRequests = emptyList()
-
         launch {
             try {
+                currentPage = 1
+                hasMore = true
+                mergeRequests.clear()
+                filteredMergeRequests = emptyList()
+
                 val apiClient = GitLabApiClient.create(server, project)
 
                 // 策略 1: 从 Git 远程 URL 自动检测项目路径（主要方法）
@@ -561,13 +563,8 @@ class GitLabToolWindowContent(
         filterTitleKeyword = titleKeyword
 
         // 重置分页状态
-        currentPage = 1
-        hasMore = true
-        mergeRequests.clear()
-        filteredMergeRequests = emptyList()
-
         // 调用 API 加载数据
-        loadMergeRequestsWithFilter()
+        runFilterQueryWithProgress()
     }
 
     /**
@@ -577,6 +574,11 @@ class GitLabToolWindowContent(
         val apiClient = currentApiClient ?: return
         val projectId = currentProjectId ?: return
         val generation = nextListReloadGeneration()
+
+        currentPage = 1
+        hasMore = true
+        mergeRequests.clear()
+        filteredMergeRequests = emptyList()
 
         launch {
             try {
@@ -623,6 +625,94 @@ class GitLabToolWindowContent(
     /**
      * 显示添加服务器对话框
      */
+    private fun runFilterQueryWithProgress() {
+        val apiClient = currentApiClient ?: return
+        val projectId = currentProjectId ?: return
+        currentFilterQueryIndicator?.cancel()
+        val generation = nextListReloadGeneration()
+
+        currentPage = 1
+        hasMore = true
+
+        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "查询合并请求", true) {
+            override fun run(indicator: ProgressIndicator) {
+                currentFilterQueryIndicator = indicator
+                indicator.isIndeterminate = true
+                indicator.text = "查询中..."
+
+                try {
+                    indicator.checkCanceled()
+                    val stateParam = currentListStateParam()
+                    val response = runBlocking {
+                        apiClient.getMergeRequests(
+                            projectId = projectId,
+                            state = stateParam,
+                            page = 1,
+                            perPage = pageSize,
+                            search = filterTitleKeyword,
+                            scope = filterScope
+                        )
+                    }
+                    indicator.checkCanceled()
+
+                    ApplicationManager.getApplication().invokeLater {
+                        if (currentFilterQueryIndicator === indicator) {
+                            currentFilterQueryIndicator = null
+                        }
+                        if (indicator.isCanceled || generation != listReloadGeneration) return@invokeLater
+
+                        if (response.success && response.data != null) {
+                            applyLoadedMergeRequests(response.data)
+                            GitLabNotifications.showSuccess(
+                                project,
+                                "查询完成",
+                                "已完成合并请求查询，共 ${response.data.size} 条结果"
+                            )
+                        } else {
+                            GitLabNotifications.showError(
+                                project,
+                                "查询失败",
+                                response.error ?: "未知错误"
+                            )
+                        }
+                    }
+                } catch (_: ProcessCanceledException) {
+                    ApplicationManager.getApplication().invokeLater {
+                        if (currentFilterQueryIndicator === indicator) {
+                            currentFilterQueryIndicator = null
+                        }
+                    }
+                } catch (e: Exception) {
+                    ApplicationManager.getApplication().invokeLater {
+                        if (currentFilterQueryIndicator === indicator) {
+                            currentFilterQueryIndicator = null
+                        }
+                        if (indicator.isCanceled || generation != listReloadGeneration) return@invokeLater
+                        GitLabNotifications.showError(
+                            project,
+                            "查询失败",
+                            e.message ?: "未知错误"
+                        )
+                    }
+                }
+            }
+        })
+    }
+
+    private fun applyLoadedMergeRequests(mrs: List<GitLabMergeRequest>) {
+        mergeRequests.clear()
+        mergeRequests.addAll(mrs)
+        filteredMergeRequests = mrs
+        currentPage = 1
+        hasMore = mrs.size >= pageSize
+
+        mainContentPanel.setMergeRequests(mrs, hasMore)
+        showCard(CardState.MAIN)
+        currentSelectedMergeRequest?.takeIf { it.state == MergeRequestState.CHECKING }?.let {
+            ensurePollingMergeRequest(it.iid)
+        }
+    }
+
     private fun showAddServerDialog() {
         val dialog = GitLabServerDialog(project)
         if (dialog.showAndGet()) {
@@ -792,6 +882,7 @@ class GitLabToolWindowContent(
     fun getContent(): JComponent = mainPanel
 
     override fun dispose() {
+        currentFilterQueryIndicator?.cancel()
         cancelAllPollingJobs()
         mergeRequestChangesJob?.cancel()
         refreshMergeRequestJob?.cancel()
