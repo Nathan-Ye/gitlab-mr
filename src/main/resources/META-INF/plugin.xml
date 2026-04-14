@@ -29,13 +29,13 @@
 
         <h3>Requirements / 运行环境</h3>
         <ul>
-            <li>IntelliJ IDEA 2024.1 or later</li>
+            <li>IntelliJ IDEA 2024.2 or later</li>
             <li>GitLab account with personal access token (requires <code>api</code> scope)</li>
         </ul>
     ]]></description>
 
     <!-- Please see https://plugins.jetbrains.com/docs/intellij/build-number-ranges.html -->
-    <idea-version since-build="241" until-build="253.*"/>
+    <idea-version since-build="242" until-build="253.*"/>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lang</depends>

@@ -137,7 +137,7 @@ gradlew.bat clean
 - Services: `GitLabApplicationService` (app), `GitLabProjectService` (project)
 - Actions: Refresh, AddServer (with icons)
 - Dependencies: `Git4Idea` (optional)
-- Platform support: since-build="241", until-build="253.*"
+- Platform support: since-build="242", until-build="253.*"
 
 ### Configuration Loading Flow
 
@@ -221,7 +221,7 @@ gradlew.bat clean
 
 5. **Git4Idea Dependency**: Marked optional in `plugin.xml`. Plugin works without Git integration but features requiring it (like remote URL extraction) will be limited.
 
-6. **Build Compatibility**: Plugin targets IntelliJ 2024.2+ (build 241) through 2025.3 (253.*). Modify `patchPluginXml` block in `build.gradle.kts` to change range.
+6. **Build Compatibility**: Plugin targets IntelliJ 2024.2+ (build 242) through 2025.3 (253.*). Modify `patchPluginXml` block in `build.gradle.kts` to change range.
 
 ## Testing the Plugin
 

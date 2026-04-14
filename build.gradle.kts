@@ -15,8 +15,8 @@ repositories {
 }
 
 dependencies {
-    // Kotlin
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.1.0")
+    // Kotlin - use IntelliJ Platform bundled version to avoid conflicts
+    implementation(kotlin("stdlib"))
 
     // Gson for JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")
@@ -49,17 +49,17 @@ intellijPlatform {
 tasks {
     // Set the JVM compatibility versions
     withType<JavaCompile> {
-        sourceCompatibility = "17"
-        targetCompatibility = "17"
+        sourceCompatibility = "21"
+        targetCompatibility = "21"
     }
     withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
         compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
         }
     }
 
     patchPluginXml {
-        sinceBuild.set("241")
+        sinceBuild.set("242")
         untilBuild.set("253.*")
     }
 

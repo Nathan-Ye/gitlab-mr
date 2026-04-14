@@ -19,7 +19,7 @@
 
 ### 环境要求
 
-- IntelliJ IDEA **2024.1** 或更高版本（Community 或 Ultimate 均可）
+- IntelliJ IDEA **2024.2** 或更高版本（Community 或 Ultimate 均可）
 - GitLab 服务器 (支持 gitlab.com 及私有部署版本)
 - GitLab **Personal Access Token**，推荐权限：
   ```
@@ -56,10 +56,10 @@
 | 组件 | 版本 |
 |------|------|
 | Kotlin | 2.1.0 |
-| IntelliJ Platform | IC 2024.2 (Build 241 - 253.*) |
+| IntelliJ Platform | IC 2024.2 (Build 242 - 253.*) |
 | OkHttp | 4.12.0 |
 | Gson | 2.10.1 |
-| Java | 17 |
+| Java | 21 |
 | Gradle | 8.13 |
 
 > 依赖可选的内置插件 `Git4Idea`，用于从 Git 远程地址自动解析项目。
