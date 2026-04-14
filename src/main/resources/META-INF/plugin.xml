@@ -5,17 +5,23 @@
     <vendor email="nathanye404@gmail.com">Nathan Ye</vendor>
 
     <description><![CDATA[
-        <h2>GitLab MR / GitLab 合并请求 管理工具</h2>
-        <p>A GitLab Merge Request tool integrated into IntelliJ IDEA, allowing you to view, create, and manage MRs without leaving your IDE.</p>
-        <p>一款集成在 IntelliJ IDEA 中的 GitLab 合并请求工具，让你在 IDE 内即可查看、创建和管理合并请求。</p>
+        View and manage GitLab Merge Requests directly within IntelliJ IDEA. Supports listing, filtering, creating, merging, and closing MRs without leaving the IDE.
+        <br/><br/>
+        在 IntelliJ IDEA 中直接查看和管理 GitLab 合并请求，无需切换到浏览器。
 
         <h3>Features</h3>
         <ul>
-            <li><b>MR List</b> — Filter by state (opened/closed/merged/locked), scope (all/mine/assigned), and keyword search</li>
+            <li><b>MR List</b> — Filter by state (opened/closed/merged/locked), scope (all/created_by_me/assigned_to_me), and keyword search</li>
             <li><b>MR Details</b> — View overview and changed files with native IntelliJ diff viewer</li>
             <li><b>MR Actions</b> — Create, merge, close, and delete merge requests directly from IDE</li>
             <li><b>Branch Support</b> — Auto-detect project from Git remote; create MR from current branch</li>
             <li><b>Multi-instance</b> — Configure multiple GitLab servers (global or per-project scope)</li>
+        </ul>
+
+        <h3>Requirements</h3>
+        <ul>
+            <li>IntelliJ IDEA 2024.2 or later</li>
+            <li>GitLab account with personal access token (requires <code>api</code> scope)</li>
         </ul>
 
         <h3>功能特点</h3>
@@ -27,10 +33,10 @@
             <li><b>多实例配置</b> — 支持配置多个 GitLab 服务器，可全局共享或按项目单独配置</li>
         </ul>
 
-        <h3>Requirements / 运行环境</h3>
+        <h3>运行环境</h3>
         <ul>
-            <li>IntelliJ IDEA 2024.2 or later</li>
-            <li>GitLab account with personal access token (requires <code>api</code> scope)</li>
+            <li>IntelliJ IDEA 2024.2 或更高版本</li>
+            <li>GitLab 账户及 Personal Access Token（需 <code>api</code> 权限）</li>
         </ul>
     ]]></description>
 
