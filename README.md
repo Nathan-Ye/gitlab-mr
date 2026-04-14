@@ -1,5 +1,7 @@
 # GitLab MR
 
+**简体中文** · [English](./README_EN.md)
+
 在 IntelliJ IDEA 中直接查看和管理 GitLab Merge Requests，无需切换到浏览器。
 
 ---
