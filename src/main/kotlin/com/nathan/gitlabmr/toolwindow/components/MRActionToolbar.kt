@@ -203,8 +203,6 @@ class MRActionToolbar : JPanel() {
     ) {
         override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
 
-        override fun displayTextInToolbar(): Boolean = false
-
         override fun actionPerformed(e: AnActionEvent) {
             onExpandAllChangesClicked?.invoke()
         }
@@ -221,8 +219,6 @@ class MRActionToolbar : JPanel() {
         AllIcons.Actions.Collapseall
     ) {
         override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.EDT
-
-        override fun displayTextInToolbar(): Boolean = false
 
         override fun actionPerformed(e: AnActionEvent) {
             onCollapseAllChangesClicked?.invoke()

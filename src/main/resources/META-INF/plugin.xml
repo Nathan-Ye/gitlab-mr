@@ -5,34 +5,34 @@
     <vendor email="nathanye404@gmail.com">Nathan Ye</vendor>
 
     <description><![CDATA[
-<h2>GitLab MR / GitLab 合并请求 管理工具</h2>
-<p>A GitLab Merge Request tool integrated into IntelliJ IDEA, allowing you to view, create, and manage MRs without leaving your IDE.</p>
-<p>一款集成在 IntelliJ IDEA 中的 GitLab 合并请求工具，让你在 IDE 内即可查看、创建和管理合并请求。</p>
+        <h2>GitLab MR / GitLab 合并请求 管理工具</h2>
+        <p>A GitLab Merge Request tool integrated into IntelliJ IDEA, allowing you to view, create, and manage MRs without leaving your IDE.</p>
+        <p>一款集成在 IntelliJ IDEA 中的 GitLab 合并请求工具，让你在 IDE 内即可查看、创建和管理合并请求。</p>
 
-<h3>功能特点</h3>
-<ul>
-    <li><b>MR 列表</b> — 支持按状态（待合并/已关闭/已合并/有冲突）、范围（全部/我创建的/指派给我的）筛选，支持关键词搜索</li>
-    <li><b>MR 详情</b> — 查看合并请求概览和变更文件列表，支持原生 IntelliJ Diff 查看变更内容</li>
-    <li><b>MR 操作</b> — 在 IDE 内创建、合并、关闭和删除合并请求</li>
-    <li><b>分支支持</b> — 自动从 Git 远程地址检测项目，支持从当前分支快速创建 MR</li>
-    <li><b>多实例配置</b> — 支持配置多个 GitLab 服务器，可全局共享或按项目单独配置</li>
-</ul>
+        <h3>Features</h3>
+        <ul>
+            <li><b>MR List</b> — Filter by state (opened/closed/merged/locked), scope (all/mine/assigned), and keyword search</li>
+            <li><b>MR Details</b> — View overview and changed files with native IntelliJ diff viewer</li>
+            <li><b>MR Actions</b> — Create, merge, close, and delete merge requests directly from IDE</li>
+            <li><b>Branch Support</b> — Auto-detect project from Git remote; create MR from current branch</li>
+            <li><b>Multi-instance</b> — Configure multiple GitLab servers (global or per-project scope)</li>
+        </ul>
 
-<h3>Features</h3>
-<ul>
-    <li><b>MR List</b> — Filter by state (opened/closed/merged/locked), scope (all/mine/assigned), and keyword search</li>
-    <li><b>MR Details</b> — View overview and changed files with native IntelliJ diff viewer</li>
-    <li><b>MR Actions</b> — Create, merge, close, and delete merge requests directly from IDE</li>
-    <li><b>Branch Support</b> — Auto-detect project from Git remote; create MR from current branch</li>
-    <li><b>Multi-instance</b> — Configure multiple GitLab servers (global or per-project scope)</li>
-</ul>
+        <h3>功能特点</h3>
+        <ul>
+            <li><b>MR 列表</b> — 支持按状态（待合并/已关闭/已合并/有冲突）、范围（全部/我创建的/指派给我的）筛选，支持关键词搜索</li>
+            <li><b>MR 详情</b> — 查看合并请求概览和变更文件列表，支持原生 IntelliJ Diff 查看变更内容</li>
+            <li><b>MR 操作</b> — 在 IDE 内创建、合并、关闭和删除合并请求</li>
+            <li><b>分支支持</b> — 自动从 Git 远程地址检测项目，支持从当前分支快速创建 MR</li>
+            <li><b>多实例配置</b> — 支持配置多个 GitLab 服务器，可全局共享或按项目单独配置</li>
+        </ul>
 
-<h3>Requirements / 运行环境</h3>
-<ul>
-    <li>IntelliJ IDEA 2024.1 or later</li>
-    <li>GitLab account with personal access token (requires <code>api</code> scope)</li>
-</ul>
-]]></description>
+        <h3>Requirements / 运行环境</h3>
+        <ul>
+            <li>IntelliJ IDEA 2024.1 or later</li>
+            <li>GitLab account with personal access token (requires <code>api</code> scope)</li>
+        </ul>
+    ]]></description>
 
     <!-- Please see https://plugins.jetbrains.com/docs/intellij/build-number-ranges.html -->
     <idea-version since-build="241" until-build="253.*"/>
