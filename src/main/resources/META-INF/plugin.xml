@@ -40,8 +40,16 @@
         </ul>
     ]]></description>
 
+    <change-notes><![CDATA[
+        <h3>3.0.1</h3>
+        <ul>
+            <li>Remove upper limit on IDE build version to support IntelliJ 2026.1 and future releases</li>
+            <li>移除 IDE 版本上限，支持 IntelliJ 2026.1及后续版本</li>
+        </ul>
+    ]]></change-notes>
+
     <!-- Please see https://plugins.jetbrains.com/docs/intellij/build-number-ranges.html -->
-    <idea-version since-build="242" until-build="253.*"/>
+    <idea-version since-build="242"/>
 
     <depends>com.intellij.modules.platform</depends>
     <depends>com.intellij.modules.lang</depends>

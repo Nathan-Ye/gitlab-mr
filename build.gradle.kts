@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.nathan.gitlabmr"
-version = "3.0.0"
+version = "3.0.1"
 
 repositories {
     mavenCentral()
@@ -60,7 +60,7 @@ tasks {
 
     patchPluginXml {
         sinceBuild.set("242")
-        untilBuild.set("253.*")
+        untilBuild.set(null as String?)
     }
 
     signPlugin {
