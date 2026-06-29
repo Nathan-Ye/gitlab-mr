@@ -41,6 +41,11 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>3.0.2</h3>
+        <ul>
+            <li>Fix plugin marketplace compatibility</li>
+            <li>修复插件市场兼容性问题</li>
+        </ul>
         <h3>3.0.1</h3>
         <ul>
             <li>Remove upper limit on IDE build version to support IntelliJ 2026.1 and future releases</li>

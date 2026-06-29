@@ -2,8 +2,6 @@ package com.nathan.gitlabmr
 
 import com.nathan.gitlabmr.config.GitLabConfigService
 import com.intellij.ide.BrowserUtil
-import com.intellij.ide.plugins.PluginManagerCore
-import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
 import git4idea.repo.GitRepositoryManager
 
@@ -15,14 +13,6 @@ class GitLabPlugin {
 
     companion object {
         private const val PLUGIN_ID = "com.nathan.gitlabmr"
-
-        /**
-         * 获取插件版本
-         */
-        fun getVersion(): String {
-            val plugin = PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID))
-            return plugin?.version ?: "unknown"
-        }
 
         /**
          * 在浏览器中打开GitLab文档
