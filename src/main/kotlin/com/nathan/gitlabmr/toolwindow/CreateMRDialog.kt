@@ -4,6 +4,7 @@ import com.nathan.gitlabmr.api.GitLabApiClient
 import com.nathan.gitlabmr.model.*
 import com.nathan.gitlabmr.util.GitLabNotifications
 import com.nathan.gitlabmr.util.GitUtil
+import com.nathan.gitlabmr.util.BranchFilters
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
@@ -21,7 +22,6 @@ import kotlinx.coroutines.runBlocking
 import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Dimension
-import java.time.Instant
 import javax.swing.*
 
 /**
@@ -323,29 +323,8 @@ class CreateMRDialog(
         sourceBranchField.removeAllItems()
         targetBranchField.removeAllItems()
 
-        // 对分支进行排序
-        val sortedBranches = branches.sortedWith(
-            compareBy<GitLabBranch>(
-                // master/main分支优先级最低（排最前面）
-                { branch ->
-                    when (branch.name.lowercase()) {
-                        "master", "main" -> 0
-                        else -> 1
-                    }
-                },
-                // 包含test的分支优先级次之
-                { branch ->
-                    if ("test" in branch.name.lowercase()) 0 else 1
-                }
-            ).thenByDescending { branch ->
-                // 按提交日期降序排序（活跃的排前面，提交日期越新越活跃）
-                try {
-                    Instant.parse(branch.commit.committedDate).toEpochMilli()
-                } catch (e: Exception) {
-                    0L
-                }
-            }
-        )
+        // 对分支进行排序（排序规则统一维护在 BranchFilters.rankBranches）
+        val sortedBranches = BranchFilters.rankBranches(branches)
 
         // 添加排序后的分支
         sortedBranches.forEach { branch ->
