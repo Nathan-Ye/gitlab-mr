@@ -54,6 +54,7 @@ class CreateMRDialog(
     private var branches: List<GitLabBranch> = emptyList()
     private var members: List<GitLabMember> = emptyList()
     private var isLoadingData = false
+    private var isFilteringBranches = false
     private var branchCommitMap: MutableMap<String, GitLabCommit> = mutableMapOf()
     private var isTitleManuallyEdited = false
     private var isDescriptionManuallyEdited = false
@@ -99,15 +100,15 @@ class CreateMRDialog(
 
         // 源分支
         val sourceLabel = JBLabel("源分支:")
-        sourceBranchField.isEditable = false
-        sourceBranchField.toolTipText = "选择源分支"
+        sourceBranchField.isEditable = true
+        sourceBranchField.toolTipText = "输入关键字后按回车筛选分支，或从下拉列表中选择"
         sourceBranchField.preferredSize = Dimension(200, 35)
         sourceBranchField.maximumSize = Dimension(200, 40)
 
         // 目标分支
         val targetLabel = JBLabel("目标分支:")
-        targetBranchField.isEditable = false
-        targetBranchField.toolTipText = "选择目标分支（通常是main或master）"
+        targetBranchField.isEditable = true
+        targetBranchField.toolTipText = "输入关键字后按回车筛选分支，或从下拉列表中选择（通常是main或master）"
         targetBranchField.preferredSize = Dimension(200, 35)
         targetBranchField.maximumSize = Dimension(200, 40)
 
@@ -189,18 +190,82 @@ class CreateMRDialog(
             }
         })
 
-        // 设置事件监听
+        // 设置事件监听：仅当“从下拉列表真实点选到 branches 中的分支”时才视为有效选择
         sourceBranchField.addActionListener {
-            if (!isLoadingData) {
+            if (!isLoadingData && !isFilteringBranches && isValidBranchSelection(sourceBranchField)) {
                 updateTitleAndDescriptionFromBranch()
             }
         }
 
         targetBranchField.addActionListener {
-            // 目标分支改变时不需要特殊处理
+            // 目标分支改变时不需要特殊处理（不加载提交信息）
         }
 
+        // 回车筛选：可编辑下拉框的编辑器中监听 VK_ENTER
+        installBranchFilterEnterHandler(sourceBranchField)
+        installBranchFilterEnterHandler(targetBranchField)
+
         return panel
+    }
+
+    /**
+     * 在可编辑 ComboBox 的编辑器组件上监听回车：执行关键字筛选、刷新下拉项、消费事件、展开下拉。
+     */
+    private fun installBranchFilterEnterHandler(comboBox: ComboBox<String>) {
+        val editorComponent = comboBox.editor.editorComponent as? JComponent ?: return
+        editorComponent.addKeyListener(object : java.awt.event.KeyAdapter() {
+            override fun keyPressed(e: java.awt.event.KeyEvent) {
+                if (e.keyCode != java.awt.event.KeyEvent.VK_ENTER) {
+                    return
+                }
+                // 事件由该监听器消费，避免触发弹窗默认按钮
+                e.consume()
+                applyBranchFilter(comboBox)
+            }
+        })
+    }
+
+    /**
+     * 用输入框当前文字筛选分支并刷新下拉项；结果为空时填入禁用占位项。
+     * 刷新期间抑制“选中即加载提交信息”的行为监听。
+     */
+    private fun applyBranchFilter(comboBox: ComboBox<String>) {
+        if (isLoadingData) {
+            return
+        }
+        val keyword = comboBox.editor.item as? String ?: ""
+        val filtered = BranchFilters.filterBranches(branches, keyword)
+
+        isFilteringBranches = true
+        try {
+            comboBox.removeAllItems()
+            if (filtered.isEmpty()) {
+                comboBox.addItem(NO_MATCH_PLACEHOLDER)
+                comboBox.selectedIndex = 0
+            } else {
+                BranchFilters.rankBranches(filtered).forEach { comboBox.addItem(it.name) }
+                comboBox.selectedIndex = -1
+            }
+            // 输入框中保留用户输入的查询词
+            comboBox.editor.item = keyword
+        } finally {
+            isFilteringBranches = false
+        }
+
+        // 刷新后总是展开下拉
+        ApplicationManager.getApplication().invokeLater {
+            if (!comboBox.isPopupVisible) {
+                comboBox.showPopup()
+            }
+        }
+    }
+
+    /**
+     * 判断当前 selectedItem 是否为 branches 中真实存在的分支名（占位项、手输文字均无效）。
+     */
+    private fun isValidBranchSelection(comboBox: ComboBox<String>): Boolean {
+        val selected = comboBox.selectedItem as? String ?: return false
+        return branches.any { it.name == selected }
     }
 
     override fun createSouthPanel(): JComponent {
@@ -464,16 +529,8 @@ class CreateMRDialog(
 
         val branchName = currentBranch.name
 
-        // 3. 检查分支是否在远程列表中
-        var branchExists = false
-        for (i in 0 until sourceBranchField.itemCount) {
-            if (sourceBranchField.getItemAt(i) == branchName) {
-                branchExists = true
-                break
-            }
-        }
-
-        if (!branchExists) {
+        // 3. 检查分支是否在远程列表中（以数据源为准，不受当前筛选结果影响）
+        if (branches.none { it.name == branchName }) {
             // 分支不在远程列表中（可能是本地新分支，还未推送）
             GitLabNotifications.showError(
                 project,
@@ -483,7 +540,8 @@ class CreateMRDialog(
             return
         }
 
-        // 4. 填充到源分支输入框
+        // 4. 重置下拉项为全部分支，再选中源分支
+        updateBranchComboBoxes()
         sourceBranchField.selectedItem = branchName
 
         // 5. 触发提交信息加载（复用现有逻辑）
@@ -535,25 +593,22 @@ class CreateMRDialog(
     }
 
     override fun doValidate(): ValidationInfo? {
-        val sourceBranch = (sourceBranchField.selectedItem as? String)?.trim() ?: ""
-
-        val targetBranch = (targetBranchField.selectedItem as? String)?.trim() ?: ""
-
-        val title = titleField.text.trim()
-
-        if (sourceBranch.isEmpty()) {
-            return ValidationInfo("请选择源分支", sourceBranchField)
+        if (!isValidBranchSelection(sourceBranchField)) {
+            return ValidationInfo("请从下拉中选择源分支", sourceBranchField)
         }
 
-        if (targetBranch.isEmpty()) {
-            return ValidationInfo("请选择目标分支", targetBranchField)
+        if (!isValidBranchSelection(targetBranchField)) {
+            return ValidationInfo("请从下拉中选择目标分支", targetBranchField)
         }
+
+        val sourceBranch = (sourceBranchField.selectedItem as String).trim()
+        val targetBranch = (targetBranchField.selectedItem as String).trim()
 
         if (sourceBranch == targetBranch) {
             return ValidationInfo("源分支和目标分支不能相同", sourceBranchField)
         }
 
-        if (title.isEmpty()) {
+        if (titleField.text.trim().isEmpty()) {
             return ValidationInfo("请输入合并请求标题", titleField)
         }
 
@@ -661,5 +716,9 @@ class CreateMRDialog(
                 }
             }
         })
+    }
+
+    companion object {
+        private const val NO_MATCH_PLACEHOLDER = "(无匹配分支)"
     }
 }
