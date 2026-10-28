@@ -21,7 +21,7 @@ object BranchFilters {
     }
 
     /**
-     * 分支排序：main/master 优先 → 名称含 test 次之 → 提交时间 [GitLabBranch.commit] 降序。
+     * 分支排序：main/master 优先 → 名称含 test 次之 → 提交时间 committedDate 降序。
      * committedDate 无法解析时按 0 处理，不抛异常。
      */
     fun rankBranches(branches: List<GitLabBranch>): List<GitLabBranch> {
