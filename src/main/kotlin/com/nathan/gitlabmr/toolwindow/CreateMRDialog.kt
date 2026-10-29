@@ -226,7 +226,8 @@ class CreateMRDialog(
     }
 
     /**
-     * 用输入框当前文字筛选分支并刷新下拉项；结果为空时填入禁用占位项。
+     * 用输入框当前文字筛选分支并刷新下拉项；结果为空时填入占位项。
+     * 刷新过程中始终保留用户输入的关键字，允许继续输入、继续回车筛选。
      * 刷新期间抑制“选中即加载提交信息”的行为监听。
      */
     private fun applyBranchFilter(comboBox: ComboBox<String>) {
@@ -241,23 +242,30 @@ class CreateMRDialog(
             comboBox.removeAllItems()
             if (filtered.isEmpty()) {
                 comboBox.addItem(NO_MATCH_PLACEHOLDER)
-                comboBox.selectedIndex = 0
             } else {
                 BranchFilters.rankBranches(filtered).forEach { comboBox.addItem(it.name) }
-                comboBox.selectedIndex = -1
             }
-            // 输入框中保留用户输入的查询词
-            comboBox.editor.item = keyword
+            // 不做任何选中（避免清空编辑器），并立即把关键字写回编辑器
+            restoreEditorText(comboBox, keyword)
         } finally {
             isFilteringBranches = false
         }
 
-        // 刷新后总是展开下拉
+        // 刷新后总是展开下拉；展开后再兜底恢复一次文字，防止 popup 切换显示时清空
         ApplicationManager.getApplication().invokeLater {
             if (!comboBox.isPopupVisible) {
                 comboBox.showPopup()
             }
+            restoreEditorText(comboBox, keyword)
         }
+    }
+
+    /**
+     * 把关键字直接写回可编辑 ComboBox 的文本组件，避免 selectedIndex 变化清空输入。
+     */
+    private fun restoreEditorText(comboBox: ComboBox<String>, keyword: String) {
+        (comboBox.editor.editorComponent as? javax.swing.text.JTextComponent)?.text = keyword
+        comboBox.editor.item = keyword
     }
 
     /**
