@@ -104,6 +104,7 @@ class CreateMRDialog(
         sourceBranchField.toolTipText = "输入关键字后按回车筛选分支，或从下拉列表中选择"
         sourceBranchField.preferredSize = Dimension(200, 35)
         sourceBranchField.maximumSize = Dimension(200, 40)
+        sourceBranchField.maximumRowCount = BRANCH_POPUP_MAX_ROWS
 
         // 目标分支
         val targetLabel = JBLabel("目标分支:")
@@ -111,6 +112,7 @@ class CreateMRDialog(
         targetBranchField.toolTipText = "输入关键字后按回车筛选分支，或从下拉列表中选择（通常是main或master）"
         targetBranchField.preferredSize = Dimension(200, 35)
         targetBranchField.maximumSize = Dimension(200, 40)
+        targetBranchField.maximumRowCount = BRANCH_POPUP_MAX_ROWS
 
         branchPanel.add(sourceLabel)
         branchPanel.add(Box.createHorizontalStrut(5))
@@ -226,7 +228,10 @@ class CreateMRDialog(
     }
 
     /**
-     * 用输入框当前文字筛选分支并刷新下拉项；结果为空时填入占位项。
+     * 用输入框当前文字筛选分支并刷新下拉项。
+     * 弹窗高度始终等于当前可见项数量（最多 [BRANCH_POPUP_MAX_ROWS] 行，更多时滚动）：
+     * 刷新后先收起弹窗再展开，强制按新的 itemCount 重算高度，
+     * 否则弹窗可见期间列表变化时，高度会停留在上一次筛选的行数。
      * 刷新过程中始终保留用户输入的关键字，允许继续输入、继续回车筛选。
      * 刷新期间抑制“选中即加载提交信息”的行为监听。
      */
@@ -239,23 +244,27 @@ class CreateMRDialog(
 
         isFilteringBranches = true
         try {
+            comboBox.model.selectedItem = null
             comboBox.removeAllItems()
             if (filtered.isEmpty()) {
                 comboBox.addItem(NO_MATCH_PLACEHOLDER)
             } else {
                 BranchFilters.rankBranches(filtered).forEach { comboBox.addItem(it.name) }
             }
-            // 不做任何选中（避免清空编辑器），并立即把关键字写回编辑器
-            restoreEditorText(comboBox, keyword)
         } finally {
             isFilteringBranches = false
         }
 
-        // 刷新后总是展开下拉；展开后再兜底恢复一次文字，防止 popup 切换显示时清空
+        // 立即恢复编辑器文字，抢在收起弹窗触发的清理之前
+        restoreEditorText(comboBox, keyword)
+
         ApplicationManager.getApplication().invokeLater {
-            if (!comboBox.isPopupVisible) {
-                comboBox.showPopup()
+            // 收起再展开：弹窗在显示时才计算尺寸，不这样做高度会停留在上一次筛选的结果
+            if (comboBox.isPopupVisible) {
+                comboBox.hidePopup()
             }
+            comboBox.showPopup()
+            // 展开后再兜底恢复一次文字，防止 popup 切换显示时清空
             restoreEditorText(comboBox, keyword)
         }
     }
@@ -728,5 +737,8 @@ class CreateMRDialog(
 
     companion object {
         private const val NO_MATCH_PLACEHOLDER = "(无匹配分支)"
+
+        /** 分支下拉弹窗最多一次展示的行数，超出后滚动。 */
+        private const val BRANCH_POPUP_MAX_ROWS = 10
     }
 }
