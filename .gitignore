@@ -18,6 +18,9 @@ out/
 # Claude Code
 .claude/
 
+# Documentation (local notes / specs)
+docs/
+
 # macOS
 .DS_Store
 
