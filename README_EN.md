@@ -44,6 +44,7 @@ Plugin artifact: `build/distributions/gitlab-mr-[version].zip`
 - Open MR in browser
 - Close / Merge / Delete MR
 - Create new MR, with title and description pre-filled from the current branch's latest commit
+- Searchable source/target branch and assignee dropdowns in the Create MR dialog (type a keyword and press Enter)
 
 ### Changed Files Diff
 - Browse changed files tree grouped by module in the "Changes" tab

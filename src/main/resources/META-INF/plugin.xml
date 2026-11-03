@@ -41,6 +41,17 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>3.0.3</h3>
+        <ul>
+            <li>Create MR dialog: source and target branch dropdowns now support keyword filtering — type a keyword and press Enter to narrow the list (case-insensitive contains match), or clear the input and press Enter to show all branches again. Enter in these fields filters the list instead of submitting the dialog.</li>
+            <li>Create MR dialog: the assignee dropdown supports the same keyword filtering and matches both the member's display name and GitLab username.</li>
+            <li>After filtering, the dropdown opens automatically and sizes to the number of results (up to 10 rows, then scrolls); when nothing matches it shows a placeholder item and keeps the keyword.</li>
+            <li>The assignee remains optional and starts empty; pick a member to assign, or leave it empty (or choose "None") to create the MR without an assignee.</li>
+            <li>创建 MR 弹框：源分支、目标分支支持输入关键字后按回车筛选（忽略大小写、包含匹配），清空输入再回车可恢复全部分支；在这两个输入框中按回车只会筛选，不会误触创建。</li>
+            <li>创建 MR 弹框：指派人下拉框支持同样的关键字筛选，可匹配成员姓名或 GitLab 用户名。</li>
+            <li>筛选后下拉弹窗自动展开，高度随结果数量自适应（最多 10 行，超出滚动）；无匹配时显示占位提示并保留已输入的关键字。</li>
+            <li>指派人仍为可选项且默认留空：从列表中选择成员即指派，留空或选择「无」则创建不带指派人的 MR。</li>
+        </ul>
         <h3>3.0.2</h3>
         <ul>
             <li>Fix plugin marketplace compatibility</li>
