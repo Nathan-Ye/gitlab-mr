@@ -4,6 +4,7 @@ import com.nathan.gitlabmr.api.GitLabApiClient
 import com.nathan.gitlabmr.model.*
 import com.nathan.gitlabmr.util.GitLabNotifications
 import com.nathan.gitlabmr.util.GitUtil
+import com.nathan.gitlabmr.util.AssigneeFilters
 import com.nathan.gitlabmr.util.BranchFilters
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProgressIndicator
@@ -54,7 +55,7 @@ class CreateMRDialog(
     private var branches: List<GitLabBranch> = emptyList()
     private var members: List<GitLabMember> = emptyList()
     private var isLoadingData = false
-    private var isFilteringBranches = false
+    private var isRefreshingComboItems = false
     private var branchCommitMap: MutableMap<String, GitLabCommit> = mutableMapOf()
     private var isTitleManuallyEdited = false
     private var isDescriptionManuallyEdited = false
@@ -149,9 +150,11 @@ class CreateMRDialog(
         assigneePanel.alignmentX = Component.LEFT_ALIGNMENT
 
         val assigneeLabel = JBLabel("指派人:")
-        assigneeField.toolTipText = "选择指派给哪个用户（可选）"
-        assigneeField.preferredSize = Dimension(150, 35)
-        assigneeField.maximumSize = Dimension(180, 40)
+        assigneeField.isEditable = true
+        assigneeField.toolTipText = "输入关键字后按回车筛选成员，或从下拉列表中选择（可选）"
+        assigneeField.preferredSize = Dimension(220, 35)
+        assigneeField.maximumSize = Dimension(240, 40)
+        assigneeField.maximumRowCount = ASSIGNEE_POPUP_MAX_ROWS
 
         // 删除源分支复选框
         removeSourceBranchCheckbox.toolTipText = "合并成功后自动删除源分支"
@@ -194,7 +197,7 @@ class CreateMRDialog(
 
         // 设置事件监听：仅当“从下拉列表真实点选到 branches 中的分支”时才视为有效选择
         sourceBranchField.addActionListener {
-            if (!isLoadingData && !isFilteringBranches && isValidBranchSelection(sourceBranchField)) {
+            if (!isLoadingData && !isRefreshingComboItems && isValidBranchSelection(sourceBranchField)) {
                 updateTitleAndDescriptionFromBranch()
             }
         }
@@ -204,8 +207,9 @@ class CreateMRDialog(
         }
 
         // 回车筛选：可编辑下拉框的编辑器中监听 VK_ENTER
-        installBranchFilterEnterHandler(sourceBranchField)
-        installBranchFilterEnterHandler(targetBranchField)
+        installFilterEnterHandler(sourceBranchField) { applyBranchFilter(sourceBranchField) }
+        installFilterEnterHandler(targetBranchField) { applyBranchFilter(targetBranchField) }
+        installFilterEnterHandler(assigneeField) { applyAssigneeFilter(assigneeField) }
 
         return panel
     }
@@ -213,7 +217,7 @@ class CreateMRDialog(
     /**
      * 在可编辑 ComboBox 的编辑器组件上监听回车：执行关键字筛选、刷新下拉项、消费事件、展开下拉。
      */
-    private fun installBranchFilterEnterHandler(comboBox: ComboBox<String>) {
+    private fun installFilterEnterHandler(comboBox: ComboBox<String>, onEnter: () -> Unit) {
         val editorComponent = comboBox.editor.editorComponent as? JComponent ?: return
         editorComponent.addKeyListener(object : java.awt.event.KeyAdapter() {
             override fun keyPressed(e: java.awt.event.KeyEvent) {
@@ -222,7 +226,7 @@ class CreateMRDialog(
                 }
                 // 事件由该监听器消费，避免触发弹窗默认按钮
                 e.consume()
-                applyBranchFilter(comboBox)
+                onEnter()
             }
         })
     }
@@ -239,20 +243,46 @@ class CreateMRDialog(
         if (isLoadingData) {
             return
         }
-        val keyword = comboBox.editor.item as? String ?: ""
+        val keyword = currentFilterKeyword(comboBox)
         val filtered = BranchFilters.filterBranches(branches, keyword)
+        val items = if (filtered.isEmpty()) {
+            listOf(NO_MATCH_PLACEHOLDER)
+        } else {
+            BranchFilters.rankBranches(filtered).map { it.name }
+        }
+        refreshFilteredItems(comboBox, keyword, items)
+    }
 
-        isFilteringBranches = true
+    /**
+     * 用输入框当前文字筛选指派人并刷新下拉项，交互与分支下拉框保持一致。
+     * 没有成员可筛选时（加载中 / 加载失败）保持原样。
+     */
+    private fun applyAssigneeFilter(comboBox: ComboBox<String>) {
+        if (isLoadingData || members.isEmpty()) {
+            return
+        }
+        val keyword = currentFilterKeyword(comboBox)
+        refreshFilteredItems(comboBox, keyword, AssigneeFilters.buildItems(members, keyword))
+    }
+
+    /**
+     * 读取可编辑 ComboBox 编辑器中当前输入的关键字。
+     */
+    private fun currentFilterKeyword(comboBox: ComboBox<String>): String {
+        return comboBox.editor.item as? String ?: ""
+    }
+
+    /**
+     * 清空并重填下拉项，同时保持关键字、重算弹窗高度并展开弹窗。
+     */
+    private fun refreshFilteredItems(comboBox: ComboBox<String>, keyword: String, items: List<String>) {
+        isRefreshingComboItems = true
         try {
             comboBox.model.selectedItem = null
             comboBox.removeAllItems()
-            if (filtered.isEmpty()) {
-                comboBox.addItem(NO_MATCH_PLACEHOLDER)
-            } else {
-                BranchFilters.rankBranches(filtered).forEach { comboBox.addItem(it.name) }
-            }
+            items.forEach { comboBox.addItem(it) }
         } finally {
-            isFilteringBranches = false
+            isRefreshingComboItems = false
         }
 
         // 立即恢复编辑器文字，抢在收起弹窗触发的清理之前
@@ -430,14 +460,19 @@ class CreateMRDialog(
     }
 
     /**
-     * 更新指派人下拉框
+     * 更新指派人下拉框：关键字为空时展示“无”和全部成员。
+     * 输入框默认留空，方便用户直接输入关键字筛选。
      */
     private fun updateAssigneeComboBox() {
+        val currentAssignee = assigneeField.selectedItem as? String
         assigneeField.removeAllItems()
-        assigneeField.addItem("无")
+        AssigneeFilters.buildItems(members, "").forEach { assigneeField.addItem(it) }
 
-        members.forEach { member ->
-            assigneeField.addItem("${member.name} (@${member.username})")
+        // 保留已有的有效选择；否则清空输入框
+        if (AssigneeFilters.findMember(members, currentAssignee) != null) {
+            assigneeField.selectedItem = currentAssignee
+        } else {
+            assigneeField.selectedIndex = -1
         }
     }
 
@@ -578,14 +613,11 @@ class CreateMRDialog(
                     ApplicationManager.getApplication().invokeLater {
                         if (response.success && response.data != null) {
                             val currentUser = response.data
-                            // 在成员列表中查找当前用户
+                            // 在成员列表中查找当前用户（先重置筛选结果，避免之前的关键字过滤掉该成员）
                             val assigneeText = "${currentUser.name} (@${currentUser.username})"
-                            // 检查指派人下拉框是否包含该用户
-                            for (i in 0 until assigneeField.itemCount) {
-                                if (assigneeField.getItemAt(i) == assigneeText) {
-                                    assigneeField.selectedItem = assigneeText
-                                    break
-                                }
+                            if (AssigneeFilters.findMember(members, assigneeText) != null) {
+                                updateAssigneeComboBox()
+                                assigneeField.selectedItem = assigneeText
                             }
                         }
                         // 如果获取失败，静默处理（不影响主流程）
@@ -598,15 +630,32 @@ class CreateMRDialog(
     }
 
     /**
+     * 读取指派人输入框当前文本；空白表示不指派。
+     */
+    private fun getSelectedAssigneeText(): String {
+        return (assigneeField.editor.item as? String)?.trim().orEmpty()
+    }
+
+    /**
      * 获取选中的指派人ID
      */
     private fun getSelectedAssigneeId(): Long? {
-        val selected = assigneeField.selectedItem as? String ?: return null
-        if (selected == "无") return null
+        return AssigneeFilters.findMember(members, getSelectedAssigneeText())?.id
+    }
 
-        // 解析格式: "Name (@username)"
-        val username = selected.substringAfter("(@").substringBefore(")")
-        return members.find { it.username == username }?.id
+    /**
+     * 指派人可选：空白或“无”表示不指派；其余文本必须是成员列表中的真实成员。
+     * 成员列表为空（加载中或加载失败）时不做限制，避免阻塞创建 MR。
+     */
+    private fun isValidAssigneeText(): Boolean {
+        if (members.isEmpty()) {
+            return true
+        }
+        val text = getSelectedAssigneeText()
+        if (text.isEmpty() || text == AssigneeFilters.NO_ASSIGNEE_LABEL) {
+            return true
+        }
+        return AssigneeFilters.findMember(members, text) != null
     }
 
     override fun doValidate(): ValidationInfo? {
@@ -616,6 +665,10 @@ class CreateMRDialog(
 
         if (!isValidBranchSelection(targetBranchField)) {
             return ValidationInfo("请从下拉中选择目标分支", targetBranchField)
+        }
+
+        if (!isValidAssigneeText()) {
+            return ValidationInfo("请从下拉中选择指派人，或清空该字段", assigneeField)
         }
 
         val sourceBranch = (sourceBranchField.selectedItem as String).trim()
@@ -740,5 +793,8 @@ class CreateMRDialog(
 
         /** 分支下拉弹窗最多一次展示的行数，超出后滚动。 */
         private const val BRANCH_POPUP_MAX_ROWS = 10
+
+        /** 指派人下拉弹窗最多一次展示的行数，超出后滚动。 */
+        private const val ASSIGNEE_POPUP_MAX_ROWS = 10
     }
 }
