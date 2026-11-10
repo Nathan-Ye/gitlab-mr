@@ -56,10 +56,10 @@ class CreateMRDialog(
     private var members: List<GitLabMember> = emptyList()
     private var isLoadingData = false
     private var isRefreshingComboItems = false
-    private var branchCommitMap: MutableMap<String, GitLabCommit> = mutableMapOf()
     private var isTitleManuallyEdited = false
-    private var isDescriptionManuallyEdited = false
-    private var lastAutoFilledBranch: String? = null
+
+    /** 上次自动填充标题时的分支组合（源分支 -> 目标分支）。 */
+    private var lastAutoFilledBranches: String? = null
 
     // API客户端
     private val apiClient: GitLabApiClient = GitLabApiClient.create(server, project)
@@ -128,7 +128,7 @@ class CreateMRDialog(
         val titleLabel = JBLabel("标题:")
         titleLabel.alignmentX = Component.LEFT_ALIGNMENT
         titleField.alignmentX = Component.LEFT_ALIGNMENT
-        titleField.toolTipText = "合并请求的标题（将从源分支的最新提交自动填充）"
+        titleField.toolTipText = "合并请求的标题（源分支和目标分支都选定后自动填充）"
         titleField.preferredSize = Dimension(Int.MAX_VALUE, 36)
         titleField.maximumSize = Dimension(Int.MAX_VALUE, 40)
 
@@ -182,28 +182,24 @@ class CreateMRDialog(
         panel.add(assigneePanel)
         panel.add(Box.createVerticalStrut(10))
 
-        // 监听标题和描述的手动编辑
+        // 监听标题的手动编辑
         titleField.addKeyListener(object : java.awt.event.KeyAdapter() {
             override fun keyReleased(e: java.awt.event.KeyEvent?) {
                 isTitleManuallyEdited = true
             }
         })
 
-        descriptionArea.addKeyListener(object : java.awt.event.KeyAdapter() {
-            override fun keyReleased(e: java.awt.event.KeyEvent?) {
-                isDescriptionManuallyEdited = true
-            }
-        })
-
         // 设置事件监听：仅当“从下拉列表真实点选到 branches 中的分支”时才视为有效选择
         sourceBranchField.addActionListener {
-            if (!isLoadingData && !isRefreshingComboItems && isValidBranchSelection(sourceBranchField)) {
-                updateTitleAndDescriptionFromBranch()
+            if (!isLoadingData && !isRefreshingComboItems) {
+                updateAutoTitle()
             }
         }
 
         targetBranchField.addActionListener {
-            // 目标分支改变时不需要特殊处理（不加载提交信息）
+            if (!isLoadingData && !isRefreshingComboItems) {
+                updateAutoTitle()
+            }
         }
 
         // 回车筛选：可编辑下拉框的编辑器中监听 VK_ENTER
@@ -237,7 +233,7 @@ class CreateMRDialog(
      * 刷新后先收起弹窗再展开，强制按新的 itemCount 重算高度，
      * 否则弹窗可见期间列表变化时，高度会停留在上一次筛选的行数。
      * 刷新过程中始终保留用户输入的关键字，允许继续输入、继续回车筛选。
-     * 刷新期间抑制“选中即加载提交信息”的行为监听。
+     * 刷新期间抑制“选中即自动填充标题”的行为监听。
      */
     private fun applyBranchFilter(comboBox: ComboBox<String>) {
         if (isLoadingData) {
@@ -325,7 +321,7 @@ class CreateMRDialog(
         leftPanel.border = JBUI.Borders.emptyRight(10)
 
         val mergeCurrentBranchButton = JButton("合并当前分支")
-        mergeCurrentBranchButton.toolTipText = "使用当前Git分支作为源分支，并自动填充提交信息"
+        mergeCurrentBranchButton.toolTipText = "使用当前Git分支作为源分支"
         mergeCurrentBranchButton.addActionListener {
             handleMergeCurrentBranch()
         }
@@ -485,72 +481,35 @@ class CreateMRDialog(
     }
 
     /**
-     * 从源分支的最新提交更新标题和描述
+     * 源分支和目标分支都选定后，按 “GitLab MR：源分支 --> 目标分支” 自动填充标题。
+     * 用户手动改过标题时保留手动内容；切到新的分支组合后重新自动填充。
      */
-    private fun updateTitleAndDescriptionFromBranch() {
-        val sourceBranch = (sourceBranchField.selectedItem as? String)?.trim() ?: return
+    private fun updateAutoTitle() {
+        val sourceBranch = selectedBranchName(sourceBranchField) ?: return
+        val targetBranch = selectedBranchName(targetBranchField) ?: return
+        val branchPair = "$sourceBranch -> $targetBranch"
 
-        if (sourceBranch.isEmpty() || sourceBranch == "加载中..." || sourceBranch == "加载失败") {
-            return
-        }
-
-        // 如果切换到了不同的分支，允许自动更新标题和描述
-        if (lastAutoFilledBranch != null && lastAutoFilledBranch != sourceBranch) {
-            // 用户切换了分支，重置手动编辑标志，允许自动填充新的分支信息
+        if (lastAutoFilledBranches != null && lastAutoFilledBranches != branchPair) {
+            // 用户切换了分支组合，重置手动编辑标志，允许用新的分支组合重新填充
             isTitleManuallyEdited = false
-            isDescriptionManuallyEdited = false
         }
 
-        // 检查缓存
-        if (branchCommitMap.containsKey(sourceBranch)) {
-            val commit = branchCommitMap[sourceBranch]!!
-            fillTitleAndDescription(commit, sourceBranch)
+        if (isTitleManuallyEdited) {
             return
         }
 
-        // 异步加载提交信息
-        ProgressManager.getInstance().run(object : Task.Backgroundable(project, "加载提交信息", true) {
-            override fun run(indicator: ProgressIndicator) {
-                indicator.isIndeterminate = true
-                indicator.text = "正在获取分支提交信息..."
-
-                try {
-                    val response = runBlocking {
-                        apiClient.getBranchCommit(projectId, sourceBranch)
-                    }
-
-                    ApplicationManager.getApplication().invokeLater {
-                        if (response.success && response.data != null) {
-                            val commit = response.data
-                            branchCommitMap[sourceBranch] = commit
-                            fillTitleAndDescription(commit, sourceBranch)
-                        }
-                    }
-                } catch (e: Exception) {
-                    // 静默失败，用户可以手动填写
-                }
-            }
-        })
+        titleField.text = "GitLab MR：$sourceBranch --> $targetBranch"
+        lastAutoFilledBranches = branchPair
     }
 
     /**
-     * 填充标题和描述
-     * @param commit 提交信息
-     * @param sourceBranch 源分支名称
+     * 读取下拉框中真实选中的分支名；占位项、手输文字均返回 null。
      */
-    private fun fillTitleAndDescription(commit: GitLabCommit, sourceBranch: String) {
-        // 如果用户没有手动编辑过标题，则自动填充
-        if (!isTitleManuallyEdited) {
-            titleField.text = commit.title
+    private fun selectedBranchName(comboBox: ComboBox<String>): String? {
+        if (!isValidBranchSelection(comboBox)) {
+            return null
         }
-
-        // 如果用户没有手动编辑过描述，则自动填充
-        if (!isDescriptionManuallyEdited) {
-            descriptionArea.text = commit.message
-        }
-
-        // 记录最后自动填充的分支
-        lastAutoFilledBranch = sourceBranch
+        return (comboBox.selectedItem as String).trim()
     }
 
     /**
@@ -596,8 +555,8 @@ class CreateMRDialog(
         updateBranchComboBoxes()
         sourceBranchField.selectedItem = branchName
 
-        // 5. 触发提交信息加载（复用现有逻辑）
-        updateTitleAndDescriptionFromBranch()
+        // 5. 目标分支已选定的话，按新的源分支刷新自动标题
+        updateAutoTitle()
 
         // 6. 获取当前用户并设置为指派人
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, "加载用户信息", true) {
