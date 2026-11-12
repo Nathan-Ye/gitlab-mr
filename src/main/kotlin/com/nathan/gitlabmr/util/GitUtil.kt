@@ -154,4 +154,17 @@ object GitUtil {
     fun getGitDir(repository: GitRepository?): VirtualFile? {
         return repository?.root?.findChild(".git")
     }
+
+    /**
+     * 将仓库相对路径解析为本地项目文件
+     * @param repoRelativePath 相对仓库根目录的路径，例如 src/main/Foo.kt
+     */
+    fun findLocalFile(project: Project, repoRelativePath: String): VirtualFile? {
+        if (repoRelativePath.isBlank()) return null
+
+        return getRepositories(project)
+            .asSequence()
+            .mapNotNull { it.root.findFileByRelativePath(repoRelativePath) }
+            .firstOrNull { !it.isDirectory }
+    }
 }
