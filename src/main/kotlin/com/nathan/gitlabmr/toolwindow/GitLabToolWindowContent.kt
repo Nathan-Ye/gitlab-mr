@@ -15,6 +15,7 @@ import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.ui.JBColor
@@ -66,6 +67,7 @@ class GitLabToolWindowContent(
     private var currentRepositoryRoot: VirtualFile? = null
     private val mrPollingJobs = mutableMapOf<Long, Job>()
     private val mrRequestVersion = mutableMapOf<Long, Long>()
+    private val silentRefreshInFlight = mutableSetOf<Long>()
     private var listReloadGeneration: Long = 0
     private var mergeRequestChangesJob: Job? = null
     private var refreshMergeRequestJob: Job? = null
@@ -263,6 +265,8 @@ class GitLabToolWindowContent(
                             val projectResponse = apiClient.getProject(projectPath)
                             if (projectResponse.success && projectResponse.data != null) {
                                 currentProject = projectResponse.data
+                                apiClient.pipelineMustSucceed =
+                                    projectResponse.data.onlyAllowMergeIfPipelineSucceeds == true
                                 loadMergeRequestsInitial(apiClient, projectResponse.data.id.toString())
                                 return@launch
                             }
@@ -346,8 +350,8 @@ class GitLabToolWindowContent(
             var consecutiveFailures = 0
             val startedAt = System.currentTimeMillis()
 
-            while (isActive && System.currentTimeMillis() - startedAt < 90_000L) {
-                delay(2_000L)
+            while (isActive && System.currentTimeMillis() - startedAt < POLLING_TIMEOUT_MS) {
+                delay(POLLING_INTERVAL_MS)
 
                 val version = nextMrRequestVersion(mrIid)
                 try {
@@ -359,10 +363,10 @@ class GitLabToolWindowContent(
                         val updatedMR = response.data
                         ApplicationManager.getApplication().invokeLater {
                             if (!isLatestMrRequestVersion(mrIid, version)) return@invokeLater
-                            mainContentPanel.refreshMRInList(updatedMR)
+                            mainContentPanel.refreshMRInList(updatedMR, reloadChanges = false)
                         }
 
-                        if (updatedMR.state != MergeRequestState.CHECKING) {
+                        if (!updatedMR.isMergeStatusPending()) {
                             stopPollingMergeRequest(mrIid)
                             break
                         }
@@ -439,7 +443,7 @@ class GitLabToolWindowContent(
 
                             mainContentPanel.setMergeRequests(response.data, hasMore)
                             showCard(CardState.MAIN)
-                            currentSelectedMergeRequest?.takeIf { it.state == MergeRequestState.CHECKING }?.let {
+                            currentSelectedMergeRequest?.takeIf { it.isMergeStatusPending() }?.let {
                                 ensurePollingMergeRequest(it.iid)
                             }
                         }
@@ -605,7 +609,7 @@ class GitLabToolWindowContent(
 
                         mainContentPanel.setMergeRequests(response.data, hasMore)
                         showCard(CardState.MAIN)
-                        currentSelectedMergeRequest?.takeIf { it.state == MergeRequestState.CHECKING }?.let {
+                        currentSelectedMergeRequest?.takeIf { it.isMergeStatusPending() }?.let {
                             ensurePollingMergeRequest(it.iid)
                         }
                     }
@@ -708,7 +712,7 @@ class GitLabToolWindowContent(
 
         mainContentPanel.setMergeRequests(mrs, hasMore)
         showCard(CardState.MAIN)
-        currentSelectedMergeRequest?.takeIf { it.state == MergeRequestState.CHECKING }?.let {
+        currentSelectedMergeRequest?.takeIf { it.isMergeStatusPending() }?.let {
             ensurePollingMergeRequest(it.iid)
         }
     }
@@ -968,6 +972,8 @@ class GitLabToolWindowContent(
         }
 
         fun updateMRDetails(mr: GitLabMergeRequest) {
+            // 切换选中项后停止上一个合并请求的轮询，避免后台持续请求
+            selectedMergeRequestIid?.takeIf { it != mr.iid }?.let { stopPollingMergeRequest(it) }
             // 设置当前服务器 URL，用于"在GitLab中打开"功能
             mrDetailsPanel.setCurrentServerUrl(currentServer?.url)
             mrDetailsPanel.setRepositoryRoot(currentRepositoryRoot)
@@ -975,8 +981,36 @@ class GitLabToolWindowContent(
             currentSelectedMergeRequest = mr
             selectedMergeRequestIid = mr.iid
             loadMergeRequestChanges(mr)
-            if (mr.state == MergeRequestState.CHECKING) {
+            if (mr.isMergeStatusPending()) {
                 ensurePollingMergeRequest(mr.iid)
+            }
+            refreshMergeRequestSilently(mr.iid)
+        }
+
+        /**
+         * 列表接口可能不返回流水线/详细合并状态，选中时静默拉取单条MR纠正展示
+         */
+        private fun refreshMergeRequestSilently(mrIid: Long) {
+            val apiClient = currentApiClient ?: return
+            val projectId = currentProjectId ?: return
+            if (!silentRefreshInFlight.add(mrIid)) return
+            val version = nextMrRequestVersion(mrIid)
+
+            launch {
+                try {
+                    val response = apiClient.getMergeRequest(projectId, mrIid)
+                    if (!isLatestMrRequestVersion(mrIid, version)) return@launch
+                    val latest = response.data ?: return@launch
+                    ApplicationManager.getApplication().invokeLater {
+                        if (!isLatestMrRequestVersion(mrIid, version)) return@invokeLater
+                        if (selectedMergeRequestIid != mrIid) return@invokeLater
+                        refreshMRInList(latest, reloadChanges = false)
+                    }
+                } catch (_: CancellationException) {
+                } catch (_: Exception) {
+                } finally {
+                    silentRefreshInFlight.remove(mrIid)
+                }
             }
         }
 
@@ -1046,7 +1080,7 @@ class GitLabToolWindowContent(
         }
 
         /**
-         * 处理合并MR
+         * 处理合并MR：先刷新真实合并状态，再按阻塞原因决定直接合并、设置自动合并或提示原因。
          */
         fun handleMergeMR(mr: GitLabMergeRequest) {
             val apiClient = currentApiClient ?: return
@@ -1055,25 +1089,37 @@ class GitLabToolWindowContent(
             ProgressManager.getInstance().run(object : Task.Backgroundable(project, "合并合并请求", true) {
                 override fun run(indicator: ProgressIndicator) {
                     indicator.isIndeterminate = true
-                    indicator.text = "正在合并请求..."
+                    indicator.text = "正在获取最新合并状态..."
 
-                    val response = runBlocking {
-                        apiClient.mergeMergeRequest(projectId, mr.iid, mr.forceRemoveSourceBranch)
-                    }
+                    val latestMR = fetchLatestMergeRequest(apiClient, projectId, mr)
+                    refreshInListIfChanged(latestMR, mr)
 
-                    ApplicationManager.getApplication().invokeLater {
-                        if (response.success) {
-                            val message = if (mr.forceRemoveSourceBranch) {
-                                "合并请求已成功合并，源分支将被删除"
-                            } else {
-                                "合并请求已成功合并"
-                            }
-                            GitLabNotifications.showSuccess(project, "合并成功", message)
-                            refreshMRInList(response.data!!)
-                        } else {
-                            GitLabNotifications.showError(project, "合并失败", response.error ?: "未知错误")
+                    // 流水线运行中：只能设置"流水线通过后自动合并"
+                    if (isPipelineGated(latestMR)) {
+                        if (confirmAutoMerge(latestMR)) {
+                            mergeMergeRequest(apiClient, projectId, latestMR, indicator, mergeWhenPipelineSucceeds = true)
                         }
+                        return
                     }
+
+                    val blockedMessage = mergeBlockedMessage(latestMR)
+                    if (blockedMessage != null) {
+                        if (latestMR.isMergeStatusPending()) {
+                            ApplicationManager.getApplication().invokeLater {
+                                ensurePollingMergeRequest(latestMR.iid)
+                            }
+                            ApplicationManager.getApplication().invokeLater {
+                                GitLabNotifications.showInfo(project, "合并状态检查中", blockedMessage)
+                            }
+                        } else {
+                            ApplicationManager.getApplication().invokeLater {
+                                GitLabNotifications.showError(project, "合并失败", blockedMessage)
+                            }
+                        }
+                        return
+                    }
+
+                    mergeMergeRequest(apiClient, projectId, latestMR, indicator, mergeWhenPipelineSucceeds = false)
                 }
 
                 override fun onThrowable(error: Throwable) {
@@ -1082,7 +1128,161 @@ class GitLabToolWindowContent(
                         GitLabNotifications.showError(project, "合并失败", error.message ?: "未知错误")
                     }
                 }
+
+                private fun mergeMergeRequest(
+                    apiClient: GitLabApiClient,
+                    projectId: String,
+                    mr: GitLabMergeRequest,
+                    indicator: ProgressIndicator,
+                    mergeWhenPipelineSucceeds: Boolean
+                ) {
+                    indicator.text = if (mergeWhenPipelineSucceeds) "正在设置自动合并..." else "正在合并请求..."
+                    val response = runBlocking {
+                        apiClient.mergeMergeRequest(
+                            projectId = projectId,
+                            mergeRequestIid = mr.iid,
+                            shouldRemoveSourceBranch = mr.forceRemoveSourceBranch,
+                            mergeWhenPipelineSucceeds = mergeWhenPipelineSucceeds
+                        )
+                    }
+
+                    if (response.success) {
+                        val rawUpdated = response.data
+                        val updated = when {
+                            rawUpdated == null && mergeWhenPipelineSucceeds -> mr.copy(autoMergeEnabled = true)
+                            rawUpdated != null && mergeWhenPipelineSucceeds && !rawUpdated.autoMergeEnabled ->
+                                rawUpdated.copy(autoMergeEnabled = true)
+                            else -> rawUpdated
+                        }
+                        ApplicationManager.getApplication().invokeLater {
+                            if (updated != null) {
+                                refreshMRInList(updated, reloadChanges = !mergeWhenPipelineSucceeds)
+                            }
+                            if (mergeWhenPipelineSucceeds) {
+                                ensurePollingMergeRequest(mr.iid)
+                                GitLabNotifications.showSuccess(
+                                    project,
+                                    "已设置自动合并",
+                                    "流水线通过后将自动合并该合并请求"
+                                )
+                            } else {
+                                val message = if (mr.forceRemoveSourceBranch) {
+                                    "合并请求已成功合并，源分支将被删除"
+                                } else {
+                                    "合并请求已成功合并"
+                                }
+                                GitLabNotifications.showSuccess(project, "合并成功", message)
+                            }
+                        }
+                        return
+                    }
+
+                    // 失败兜底：刷新真实状态，按最新状态给出可读原因
+                    val latestMR = fetchLatestMergeRequest(apiClient, projectId, mr)
+                    refreshInListIfChanged(latestMR, mr)
+
+                    if (response.statusCode == 405 && !mergeWhenPipelineSucceeds &&
+                        (latestMR.blockReason == MergeBlockReason.CI_RUNNING || latestMR.isPipelineRunning())
+                    ) {
+                        if (confirmAutoMerge(latestMR)) {
+                            mergeMergeRequest(apiClient, projectId, latestMR, indicator, mergeWhenPipelineSucceeds = true)
+                        }
+                        return
+                    }
+
+                    val message = when {
+                        response.statusCode == 409 -> "目标分支已更新，请刷新后再合并"
+                        response.statusCode == 405 -> (mergeBlockedMessage(latestMR)
+                            ?: "GitLab 判定该合并请求当前不可合并，请检查流水线、审批、冲突或草稿状态") +
+                            mergeStatusDiagnostics(latestMR)
+                        else -> mergeBlockedMessage(latestMR) ?: response.error ?: "未知错误"
+                    }
+                    ApplicationManager.getApplication().invokeLater {
+                        GitLabNotifications.showError(project, "合并失败", message)
+                    }
+                }
             })
+        }
+
+        private fun fetchLatestMergeRequest(
+            apiClient: GitLabApiClient,
+            projectId: String,
+            mr: GitLabMergeRequest
+        ): GitLabMergeRequest {
+            val response = runBlocking { apiClient.getMergeRequest(projectId, mr.iid) }
+            return if (response.success && response.data != null) response.data else mr
+        }
+
+        private fun refreshInListIfChanged(latestMR: GitLabMergeRequest, originalMR: GitLabMergeRequest) {
+            if (latestMR == originalMR) return
+            ApplicationManager.getApplication().invokeLater {
+                refreshMRInList(latestMR, reloadChanges = false)
+            }
+        }
+
+        /**
+         * 流水线运行中时，询问是否设置为流水线通过后自动合并。
+         */
+        private fun confirmAutoMerge(mr: GitLabMergeRequest): Boolean {
+            var confirmed = false
+            ApplicationManager.getApplication().invokeAndWait {
+                confirmed = Messages.showYesNoDialog(
+                    project,
+                    "合并请求 !${mr.iid} 的流水线正在运行，是否在流水线通过后自动合并？",
+                    "流水线通过后自动合并",
+                    "设置自动合并",
+                    "取消",
+                    Messages.getQuestionIcon()
+                ) == Messages.YES
+            }
+            return confirmed
+        }
+
+        /**
+         * 当前状态不可直接合并时返回原因；可合并或原因未知（交给接口兜底）时返回 null。
+         */
+        private fun mergeBlockedMessage(mr: GitLabMergeRequest): String? {
+            return when {
+                mr.state == MergeRequestState.LOCKED -> "存在合并冲突，请先解决冲突"
+                mr.state == MergeRequestState.CHECKING -> "正在检查合并状态，请稍候再合并"
+                mr.state != MergeRequestState.OPENED -> "当前合并请求状态不可合并"
+                else -> when (mr.blockReason) {
+                    MergeBlockReason.NONE, MergeBlockReason.UNKNOWN -> null
+                    MergeBlockReason.CI_RUNNING -> "流水线正在运行，暂不能直接合并"
+                    MergeBlockReason.CI_FAILED -> "流水线未通过，请修复后重试"
+                    MergeBlockReason.CONFLICT -> "存在合并冲突，请先解决冲突"
+                    MergeBlockReason.NEED_REBASE -> "源分支需要变基，请先变基后再合并"
+                    MergeBlockReason.APPROVAL -> "合并请求尚未审批通过"
+                    MergeBlockReason.REQUESTED_CHANGES -> "合并请求有待处理的修改意见"
+                    MergeBlockReason.DISCUSSIONS -> "存在未解决的讨论"
+                    MergeBlockReason.DRAFT -> "合并请求仍是草稿状态"
+                    MergeBlockReason.EXTERNAL_CHECK -> "外部状态检查尚未通过"
+                    MergeBlockReason.BLOCKED -> "合并请求被其他合并请求阻塞"
+                }
+            }
+        }
+
+        /**
+         * 流水线正在运行且可能阻塞合并。
+         * 有些GitLab版本不返回detailed_merge_status，此时只能靠head_pipeline推断。
+         */
+        private fun isPipelineGated(mr: GitLabMergeRequest): Boolean {
+            return mr.state == MergeRequestState.OPENED &&
+                (mr.blockReason == MergeBlockReason.CI_RUNNING ||
+                    (mr.blockReason == MergeBlockReason.UNKNOWN && mr.isPipelineRunning()))
+        }
+
+        /**
+         * 合并失败时附带原始状态，便于排查GitLab返回的阻塞原因
+         */
+        private fun mergeStatusDiagnostics(mr: GitLabMergeRequest): String {
+            val statuses = listOfNotNull(
+                mr.mergeStatusRaw?.let { "merge_status=$it" },
+                mr.detailedMergeStatusRaw?.let { "detailed_merge_status=$it" },
+                mr.headPipelineStatus?.let { "pipeline=$it" },
+                "blockReason=${mr.blockReason.name}"
+            )
+            return "\n\n状态信息：" + statuses.joinToString(", ")
         }
 
         /**
@@ -1177,7 +1377,7 @@ class GitLabToolWindowContent(
             }
         }
 
-        fun refreshMRInList(updatedMR: GitLabMergeRequest) {
+        fun refreshMRInList(updatedMR: GitLabMergeRequest, reloadChanges: Boolean = true) {
             // 更新 mergeRequests 列表中的MR
             val index = mergeRequests.indexOfFirst { it.iid == updatedMR.iid }
             if (index != -1) {
@@ -1216,13 +1416,20 @@ class GitLabToolWindowContent(
                 }
                 // 更新详情面板
                 if (selectedMergeRequestIid == updatedMR.iid) {
-                    mrDetailsPanel.setMergeRequest(updatedMR)
+                    val scrollBehavior = if (reloadChanges) {
+                        MRDetailsPanel.ScrollBehavior.RESET_TOP
+                    } else {
+                        MRDetailsPanel.ScrollBehavior.PRESERVE
+                    }
+                    mrDetailsPanel.setMergeRequest(updatedMR, scrollBehavior)
                     mrDetailsPanel.setCurrentServerUrl(currentServer?.url)
                     currentSelectedMergeRequest = updatedMR
                     selectedMergeRequestIid = updatedMR.iid
-                    loadMergeRequestChanges(updatedMR)
+                    if (reloadChanges) {
+                        loadMergeRequestChanges(updatedMR)
+                    }
                 }
-                if (updatedMR.state == MergeRequestState.CHECKING) {
+                if (updatedMR.isMergeStatusPending()) {
                     ensurePollingMergeRequest(updatedMR.iid)
                 } else {
                     stopPollingMergeRequest(updatedMR.iid)
@@ -1274,5 +1481,13 @@ class GitLabToolWindowContent(
                 }
             }
         }
+    }
+
+    companion object {
+        /** 合并状态轮询间隔：3 秒。 */
+        private const val POLLING_INTERVAL_MS = 3_000L
+
+        /** 合并状态轮询上限：流水线时间较长，最多持续 10 分钟。 */
+        private const val POLLING_TIMEOUT_MS = 600_000L
     }
 }

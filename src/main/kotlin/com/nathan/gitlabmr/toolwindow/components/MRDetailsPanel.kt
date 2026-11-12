@@ -21,6 +21,7 @@ import java.awt.Font
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.GridLayout
+import java.awt.Point
 import java.awt.RenderingHints
 import java.text.SimpleDateFormat
 import java.util.*
@@ -38,6 +39,9 @@ class MRDetailsPanel(project: Project) : JPanel() {
     private val stateTextLabel = JBLabel("状态：")
     private val removeSourceBranchLabel = JBLabel()
     private val removeSourceBranchTextLabel = JBLabel("合并后删除源分支：")
+    private val autoMergeTextLabel = JBLabel("自动合并：")
+    private val autoMergeLabel = JBLabel()
+    private val autoMergeRowPanel = JPanel()
     private val authorLabel = JBLabel()
     private val branchLabel = BranchInfoLabel()
     private val createdTimeLabel = JBLabel()
@@ -167,6 +171,14 @@ class MRDetailsPanel(project: Project) : JPanel() {
         removeSourceBranchLabel.font = removeSourceBranchLabel.font.deriveFont(Font.PLAIN, 13f)
         removeSourceBranchLabel.alignmentX = LEFT_ALIGNMENT
 
+        // 自动合并标识样式
+        autoMergeTextLabel.font = autoMergeTextLabel.font.deriveFont(Font.BOLD, 13f)
+        autoMergeTextLabel.alignmentX = LEFT_ALIGNMENT
+        autoMergeTextLabel.foreground = JBColor(Color(0x9f9627), Color(0xd6c76a))
+        autoMergeLabel.font = autoMergeLabel.font.deriveFont(Font.PLAIN, 13f)
+        autoMergeLabel.alignmentX = LEFT_ALIGNMENT
+        autoMergeLabel.foreground = JBColor(Color(0x9f9627), Color(0xd6c76a))
+
         // 信息标签样式
         authorLabel.font = authorLabel.font.deriveFont(Font.PLAIN, 13f)
         createdTimeLabel.font = createdTimeLabel.font.deriveFont(Font.PLAIN, 13f)
@@ -276,6 +288,19 @@ class MRDetailsPanel(project: Project) : JPanel() {
         val branchRowWrapper = createWrapperPanel(branchRowPanel)
         mainPanel.add(branchRowWrapper)
         mainPanel.add(Box.createVerticalStrut(6))
+
+        // 自动合并标识行：位于分支信息下方，仅已设置自动合并时显示
+        autoMergeRowPanel.layout = BoxLayout(autoMergeRowPanel, BoxLayout.X_AXIS)
+        autoMergeRowPanel.background = UIUtil.getPanelBackground()
+        autoMergeRowPanel.alignmentX = LEFT_ALIGNMENT
+        autoMergeRowPanel.border = JBUI.Borders.emptyBottom(6)
+        autoMergeRowPanel.add(autoMergeTextLabel)
+        autoMergeRowPanel.add(Box.createHorizontalStrut(6))
+        autoMergeRowPanel.add(autoMergeLabel)
+        autoMergeRowPanel.add(Box.createHorizontalGlue())
+        autoMergeRowPanel.isVisible = false
+        mainPanel.add(autoMergeRowPanel)
+
         mainPanel.add(createSeparator())
         mainPanel.add(Box.createVerticalStrut(4))
         mainPanel.add(infoPanel)
@@ -355,8 +380,15 @@ class MRDetailsPanel(project: Project) : JPanel() {
 
     /**
      * 设置合并请求
+     *
+     * @param scrollBehavior 手动刷新/切换请求时回到顶部；后台轮询刷新时保持阅读位置
      */
-    fun setMergeRequest(mr: GitLabMergeRequest) {
+    fun setMergeRequest(
+        mr: GitLabMergeRequest,
+        scrollBehavior: ScrollBehavior = ScrollBehavior.RESET_TOP
+    ) {
+        val previousMR = currentMR
+        val isSameMergeRequest = previousMR?.iid == mr.iid
         currentMR = mr
 
         // 显示工具栏和外层标签栏内容
@@ -365,12 +397,27 @@ class MRDetailsPanel(project: Project) : JPanel() {
         outerCardLayout.show(outerCardPanel, "CONTENT")
         centerCardLayout.show(centerCardPanel, "CONTENT")
 
+        // 数据没有变化时只更新按钮状态，避免整页重排导致滚动位置跳动
+        if (mr == previousMR) {
+            actionToolbar.updateButtonStates(mr)
+            updateChangeTabActionsVisibility()
+            return
+        }
+
+        // 记录用户当前阅读位置，后台刷新后恢复
+        val previousScrollValue = scrollPane.verticalScrollBar.value
+
         // 设置标题
         titleLabel.text = mr.title
 
         // 设置状态
-        stateLabel.text = mr.state.displayName
+        stateLabel.text = mr.displayStateText()
         stateLabel.setStateColor(getStateColor(mr.state))
+
+        // 自动合并标识
+        val autoMergeText = mr.autoMergeText()
+        autoMergeRowPanel.isVisible = autoMergeText != null
+        autoMergeLabel.text = autoMergeText ?: ""
 
         // 根据状态设置"合并后删除源分支"字段（仅对待合并状态显示）
         when (mr.state) {
@@ -441,20 +488,76 @@ class MRDetailsPanel(project: Project) : JPanel() {
         } else {
             mr.description
         }
+        // 文本光标默认落在文末，会触发scrollRectToVisible把详情滚到底部
+        titleLabel.caretPosition = 0
+        descriptionArea.caretPosition = 0
 
         mainPanel.revalidate()
         mainPanel.repaint()
 
-        // 将滚动条设置到顶部，确保显示最顶部的内容
-        SwingUtilities.invokeLater {
-            scrollPane.verticalScrollBar.value = 0
+        // 切换到其他合并请求时回到首个标签
+        if (!isSameMergeRequest) {
+            tabbedPane.selectedIndex = 0
         }
-
-        tabbedPane.selectedIndex = 0
+        when (scrollBehavior) {
+            ScrollBehavior.RESET_TOP -> scrollDetailsToTop()
+            ScrollBehavior.PRESERVE -> restoreDetailScrollPosition(previousScrollValue)
+        }
         actionToolbar.updateButtonStates(mr)
         updateChangeTabActionsVisibility()
         // 更新工具栏按钮状态
         actionToolbar.updateButtonStates(mr)
+    }
+
+    /**
+     * 刷新来源：决定刷新后详情的滚动位置。
+     */
+    enum class ScrollBehavior {
+        /** 切换合并请求、手动刷新：回到顶部 */
+        RESET_TOP,
+
+        /** 后台轮询、静默刷新：保持用户当前阅读位置 */
+        PRESERVE
+    }
+
+    /**
+     * 恢复后台刷新前的阅读位置。
+     * 文本区换行重排和光标复位都会改变滚动范围，等布局完成后再校正两次。
+     */
+    private fun restoreDetailScrollPosition(value: Int) {
+        SwingUtilities.invokeLater {
+            applyScrollPosition(value)
+            SwingUtilities.invokeLater {
+                applyScrollPosition(value)
+            }
+        }
+    }
+
+    private fun applyScrollPosition(value: Int) {
+        val bar = scrollPane.verticalScrollBar
+        // 用户正在拖动滚动条时不覆盖其操作
+        if (bar.valueIsAdjusting) return
+        bar.value = value.coerceIn(bar.minimum, bar.maximum)
+    }
+
+    /**
+     * 刷新后回到详情顶部。
+     * 文本区重新换行会改变内容高度，需要等布局完成后再校正一次，
+     * 否则滚动位置会被滚动条的范围裁剪到最底部。
+     */
+    private fun scrollDetailsToTop() {
+        SwingUtilities.invokeLater {
+            resetDetailScrollPosition()
+            SwingUtilities.invokeLater {
+                resetDetailScrollPosition()
+            }
+        }
+    }
+
+    private fun resetDetailScrollPosition() {
+        scrollPane.verticalScrollBar.value = scrollPane.verticalScrollBar.minimum
+        scrollPane.horizontalScrollBar.value = scrollPane.horizontalScrollBar.minimum
+        scrollPane.viewport.viewPosition = Point(0, 0)
     }
 
     fun setMergeRequestChangesLoading() {

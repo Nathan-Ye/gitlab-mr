@@ -21,6 +21,56 @@ import java.util.concurrent.TimeUnit
 
 private val CHECKING_MERGE_STATUSES = setOf("checking", "preparing", "unchecked", "approvals_syncing")
 
+/** 等待第三方状态检查结果。 */
+private val EXTERNAL_CHECK_STATUSES = setOf("external_status_checks", "status_checks_must_pass")
+
+/**
+ * 由 GitLab 的 detailed_merge_status（老版本回退 merge_status）推导合并阻塞原因。
+ */
+private fun resolveMergeBlockReason(
+    apiState: String,
+    detailedMergeStatus: String?,
+    mergeStatus: String?,
+    headPipelineStatus: String?,
+    hasConflict: Boolean,
+    pipelineMustSucceed: Boolean
+): MergeBlockReason {
+    if (apiState != "opened") return MergeBlockReason.NONE
+    if (hasConflict) return MergeBlockReason.CONFLICT
+
+    val pipelineRunning = headPipelineStatus != null && headPipelineStatus in PIPELINE_RUNNING_STATUSES
+    val pipelineFailed = headPipelineStatus != null && headPipelineStatus in PIPELINE_FAILED_STATUSES
+
+    // 老版本 GitLab 没有 detailed_merge_status，只能结合流水线状态和项目门禁推断
+    if (detailedMergeStatus == null) {
+        return when {
+            pipelineMustSucceed && pipelineRunning -> MergeBlockReason.CI_RUNNING
+            pipelineMustSucceed && pipelineFailed -> MergeBlockReason.CI_FAILED
+            mergeStatus == null || mergeStatus == "can_be_merged" -> MergeBlockReason.NONE
+            mergeStatus in CHECKING_MERGE_STATUSES -> MergeBlockReason.NONE
+            // 老版本无法细分原因，交给合并接口兜底
+            else -> MergeBlockReason.UNKNOWN
+        }
+    }
+
+    return when (detailedMergeStatus) {
+        "mergeable" -> MergeBlockReason.NONE
+        "ci_still_running" -> MergeBlockReason.CI_RUNNING
+        // 流水线实际还在跑（或拿不到流水线状态）时按"流水线中"处理，允许设置自动合并
+        "ci_must_pass" -> if (pipelineFailed) MergeBlockReason.CI_FAILED else MergeBlockReason.CI_RUNNING
+        "conflict" -> MergeBlockReason.CONFLICT
+        "need_rebase" -> MergeBlockReason.NEED_REBASE
+        "not_approved" -> MergeBlockReason.APPROVAL
+        "requested_changes" -> MergeBlockReason.REQUESTED_CHANGES
+        "discussions_not_resolved" -> MergeBlockReason.DISCUSSIONS
+        "draft_status" -> MergeBlockReason.DRAFT
+        "blocked_status" -> MergeBlockReason.BLOCKED
+        in EXTERNAL_CHECK_STATUSES -> MergeBlockReason.EXTERNAL_CHECK
+        in CHECKING_MERGE_STATUSES -> MergeBlockReason.NONE
+        else -> MergeBlockReason.UNKNOWN
+    }
+}
+
 /**
  * GitLab API客户端
  * 提供与GitLab REST API交互的所有功能
@@ -99,6 +149,12 @@ class GitLabApiClient(
 
     private val apiBaseUrl: String = "${normalizeUrl(serverUrl)}/api/$API_VERSION"
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /**
+     * 项目是否要求流水线通过后才允许合并。
+     * 当GitLab未返回detailed_merge_status时，用该开关配合head_pipeline推断阻塞原因。
+     */
+    var pipelineMustSucceed: Boolean = false
 
     /**
      * 添加认证参数到URL（使用URL参数方式，与浏览器一致）
@@ -435,7 +491,7 @@ class GitLabApiClient(
                 val mrDtos = gson.fromJson<List<MergeResponseDto>>(body, type)
 
                 // 转换为业务模型
-                val mrs = mrDtos.map { it.toGitLabMergeRequest() }
+                val mrs = mrDtos.map { it.toGitLabMergeRequest(pipelineMustSucceed = pipelineMustSucceed) }
                 GitLabApiResponse(mrs, true, null, response.code)
             } else {
                 val error = parseError(response.body?.string())
@@ -473,7 +529,7 @@ class GitLabApiClient(
             if (response.isSuccessful) {
                 val body = response.body?.string()
                 val mrDto = gson.fromJson(body, MergeResponseDto::class.java)
-                GitLabApiResponse(mrDto.toGitLabMergeRequest(), true, null, response.code)
+                GitLabApiResponse(mrDto.toGitLabMergeRequest(pipelineMustSucceed = pipelineMustSucceed), true, null, response.code)
             } else {
                 val error = parseError(response.body?.string())
                 GitLabApiResponse(null, false, error, response.code)
@@ -844,7 +900,7 @@ class GitLabApiClient(
             if (response.isSuccessful) {
                 val body = response.body?.string()
                 val mrDto = gson.fromJson(body, MergeResponseDto::class.java)
-                GitLabApiResponse(mrDto.toGitLabMergeRequest(), true, null, response.code)
+                GitLabApiResponse(mrDto.toGitLabMergeRequest(pipelineMustSucceed = pipelineMustSucceed), true, null, response.code)
             } else {
                 val error = parseError(response.body?.string())
                 GitLabApiResponse(null, false, error, response.code)
@@ -859,11 +915,13 @@ class GitLabApiClient(
      * @param projectId 项目ID或路径
      * @param mergeRequestIid MR的iid
      * @param shouldRemoveSourceBranch 是否在合并后删除源分支
+     * @param mergeWhenPipelineSucceeds 流水线通过后自动合并
      */
     suspend fun mergeMergeRequest(
         projectId: String,
         mergeRequestIid: Long,
-        shouldRemoveSourceBranch: Boolean = false
+        shouldRemoveSourceBranch: Boolean = false,
+        mergeWhenPipelineSucceeds: Boolean = false
     ): GitLabApiResponse<GitLabMergeRequest> = withContext(Dispatchers.IO) {
         try {
             val encodedProjectId = if (projectId.all { it.isDigit() }) {
@@ -873,13 +931,15 @@ class GitLabApiClient(
             }
             val url = "$apiBaseUrl/projects/$encodedProjectId/merge_requests/$mergeRequestIid/merge".withAuthToken()
 
-            // 构建请求体，根据参数决定是否删除源分支
-            val requestBodyJson = if (shouldRemoveSourceBranch) {
-                """{"should_remove_source_branch": true}"""
-            } else {
-                "{}"
+            // 构建请求体，根据参数决定是否删除源分支、是否流水线通过后自动合并
+            val bodyParams = mutableListOf<String>()
+            if (shouldRemoveSourceBranch) {
+                bodyParams.add("\"should_remove_source_branch\": true")
             }
-            val requestBody = requestBodyJson.toRequestBody(JSON_MEDIA_TYPE)
+            if (mergeWhenPipelineSucceeds) {
+                bodyParams.add("\"merge_when_pipeline_succeeds\": true")
+            }
+            val requestBody = "{${bodyParams.joinToString(",")}}".toRequestBody(JSON_MEDIA_TYPE)
 
             val request = Request.Builder()
                 .url(url)
@@ -891,8 +951,15 @@ class GitLabApiClient(
 
             if (response.isSuccessful) {
                 val body = response.body?.string()
-                val mrDto = gson.fromJson(body, MergeResponseDto::class.java)
-                GitLabApiResponse(mrDto.toGitLabMergeRequest(), true, null, response.code)
+                // 202（已设置自动合并）等场景可能没有响应体，交给调用方轮询刷新
+                val mrDto = body?.takeIf { it.isNotBlank() }?.let {
+                    gson.fromJson(it, MergeResponseDto::class.java)
+                }
+                if (mrDto != null) {
+                    GitLabApiResponse(mrDto.toGitLabMergeRequest(pipelineMustSucceed = pipelineMustSucceed), true, null, response.code)
+                } else {
+                    GitLabApiResponse(null, true, null, response.code)
+                }
             } else {
                 val error = parseError(response.body?.string())
                 GitLabApiResponse(null, false, error, response.code)
@@ -967,6 +1034,16 @@ class GitLabApiClient(
     // ==================== 内部DTO类 ====================
 
     /**
+     * 合并请求HEAD流水线DTO
+     */
+    private data class HeadPipelineDto(
+        val id: Long? = null,
+        val status: String? = null,
+        val ref: String? = null,
+        val sha: String? = null
+    )
+
+    /**
      * 合并请求响应DTO
      */
     private data class MergeResponseDto(
@@ -997,16 +1074,26 @@ class GitLabApiClient(
         val downvotes: Int?,
         val user_notes_count: Int?,
         val force_remove_source_branch: Boolean? = null,
-        val diff_refs: MergeRequestDiffRefsDto? = null
+        val diff_refs: MergeRequestDiffRefsDto? = null,
+        val head_pipeline: HeadPipelineDto? = null,
+        val merge_when_pipeline_succeeds: Boolean? = null
     ) {
-        fun toGitLabMergeRequest(): GitLabMergeRequest {
+        fun toGitLabMergeRequest(pipelineMustSucceed: Boolean): GitLabMergeRequest {
             val hasConflict = has_conflicts ?: false
             val apiState = state.lowercase()
             val detailedMergeStatus = detailed_merge_status?.lowercase()
             val mergeStatus = merge_status?.lowercase()
+            val headPipelineStatus = head_pipeline?.status?.lowercase()
             val finalState = when (apiState) {
                 "merged" -> MergeRequestState.MERGED
                 "closed" -> MergeRequestState.CLOSED
+                // GitLab 在合并进行中会短暂返回 state=locked，此时并非冲突，
+                // 按"检查中"处理并继续轮询，等状态变为 merged
+                "locked" -> if (detailedMergeStatus == "conflict" || hasConflict) {
+                    MergeRequestState.LOCKED
+                } else {
+                    MergeRequestState.CHECKING
+                }
                 "opened" -> when {
                     detailedMergeStatus in CHECKING_MERGE_STATUSES || mergeStatus in CHECKING_MERGE_STATUSES -> MergeRequestState.CHECKING
                     detailedMergeStatus == "conflict" || hasConflict -> MergeRequestState.LOCKED
@@ -1024,6 +1111,16 @@ class GitLabApiClient(
                 state = finalState,
                 mergeStatusRaw = merge_status,
                 detailedMergeStatusRaw = detailed_merge_status,
+                blockReason = resolveMergeBlockReason(
+                    apiState = apiState,
+                    detailedMergeStatus = detailedMergeStatus,
+                    mergeStatus = mergeStatus,
+                    headPipelineStatus = headPipelineStatus,
+                    hasConflict = hasConflict,
+                    pipelineMustSucceed = pipelineMustSucceed
+                ),
+                headPipelineStatus = headPipelineStatus,
+                autoMergeEnabled = merge_when_pipeline_succeeds ?: false,
                 sourceBranch = source_branch,
                 targetBranch = target_branch,
                 author = author.toGitLabUser(),

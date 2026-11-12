@@ -72,7 +72,10 @@ data class GitLabProject(
     val createdAt: String,
 
     @SerializedName("last_activity_at")
-    val lastActivityAt: String
+    val lastActivityAt: String,
+
+    @SerializedName("only_allow_merge_if_pipeline_succeeds")
+    val onlyAllowMergeIfPipelineSucceeds: Boolean? = null
 )
 
 /**
@@ -92,6 +95,30 @@ enum class MergeRequestState(val displayName: String) {
     }
 }
 
+/** 流水线仍在进行的 GitLab 状态。 */
+internal val PIPELINE_RUNNING_STATUSES =
+    setOf("created", "waiting_for_resource", "preparing", "pending", "running", "scheduled")
+
+/** 流水线已失败或被取消的状态。 */
+internal val PIPELINE_FAILED_STATUSES = setOf("failed", "canceled")
+
+/**
+ * 合并阻塞原因：说明"为什么现在不能合并"，不影响 [MergeRequestState] 的生命周期语义。
+ */enum class MergeBlockReason(val displayName: String) {
+    NONE(""),
+    CI_RUNNING("流水线中"),
+    CI_FAILED("流水线未通过"),
+    CONFLICT("有冲突"),
+    NEED_REBASE("需变基"),
+    APPROVAL("待审批"),
+    REQUESTED_CHANGES("有待处理的修改"),
+    DISCUSSIONS("有未解决讨论"),
+    DRAFT("草稿"),
+    EXTERNAL_CHECK("等待外部检查"),
+    BLOCKED("被其他合并请求阻塞"),
+    UNKNOWN("暂不可合并")
+}
+
 /**
  * GitLab合并请求
  */
@@ -104,6 +131,9 @@ data class GitLabMergeRequest(
     val state: MergeRequestState,
     val mergeStatusRaw: String? = null,
     val detailedMergeStatusRaw: String? = null,
+    val blockReason: MergeBlockReason = MergeBlockReason.NONE,
+    val headPipelineStatus: String? = null,
+    val autoMergeEnabled: Boolean = false,
     val sourceBranch: String,
     val targetBranch: String,
     val author: GitLabUser,
@@ -124,7 +154,53 @@ data class GitLabMergeRequest(
     val userNotesCount: Int = 0,
     val forceRemoveSourceBranch: Boolean = false,
     val diffRefs: GitLabMergeRequestDiffRefs? = null
-)
+) {
+    /**
+     * 状态展示文案：待合并叠加阻塞原因，其他状态保持原样。
+     */
+    fun displayStateText(): String {
+        if (state != MergeRequestState.OPENED || blockReason == MergeBlockReason.NONE) {
+            return state.displayName
+        }
+        return "${state.displayName} · ${blockReason.displayName}"
+    }
+
+    /**
+     * 是否允许点击合并：流水线运行中允许点击以设置自动合并，原因未知时交给接口兜底。
+     * 已设置自动合并时不再允许重复合并。
+     */
+    fun canAttemptMerge(): Boolean {
+        if (autoMergeEnabled) return false
+        return state == MergeRequestState.OPENED &&
+            (blockReason == MergeBlockReason.NONE ||
+                blockReason == MergeBlockReason.CI_RUNNING ||
+                blockReason == MergeBlockReason.UNKNOWN)
+    }
+
+    /**
+     * 自动合并标记文案：仅对待合并且已设置的合并请求展示。
+     */
+    fun autoMergeText(): String? {
+        if (!autoMergeEnabled || state != MergeRequestState.OPENED) return null
+        return "已设置，流水线通过后自动合并"
+    }
+
+    /**
+     * 合并状态是否还在变化中（需要轮询刷新）。
+     */
+    fun isMergeStatusPending(): Boolean {
+        return state == MergeRequestState.CHECKING ||
+            blockReason == MergeBlockReason.CI_RUNNING ||
+            (autoMergeEnabled && state == MergeRequestState.OPENED)
+    }
+
+    /**
+     * 流水线是否仍在进行。
+     */
+    fun isPipelineRunning(): Boolean {
+        return headPipelineStatus != null && headPipelineStatus in PIPELINE_RUNNING_STATUSES
+    }
+}
 
 data class GitLabMergeRequestDiffRefs(
     val baseSha: String?,

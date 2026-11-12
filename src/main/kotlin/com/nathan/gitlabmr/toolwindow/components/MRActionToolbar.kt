@@ -1,6 +1,7 @@
 package com.nathan.gitlabmr.toolwindow.components
 
 import com.nathan.gitlabmr.model.GitLabMergeRequest
+import com.nathan.gitlabmr.model.MergeBlockReason
 import com.nathan.gitlabmr.model.MergeRequestState
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionManager
@@ -135,7 +136,25 @@ class MRActionToolbar : JPanel() {
 
         override fun update(e: AnActionEvent) {
             val mr = currentMR
-            e.presentation.isEnabled = !isRefreshing && mr?.state == MergeRequestState.OPENED
+            e.presentation.description = mergeActionDescription(mr)
+            e.presentation.isEnabled = !isRefreshing && mr?.canAttemptMerge() == true
+        }
+
+        private fun mergeActionDescription(mr: GitLabMergeRequest?): String {
+            return when {
+                mr == null -> "接受并合并此请求"
+                mr.autoMergeEnabled && mr.state == MergeRequestState.OPENED ->
+                    "已设置流水线通过后自动合并，无需重复合并"
+                mr.state == MergeRequestState.LOCKED -> "存在合并冲突，暂不能合并"
+                mr.state == MergeRequestState.CHECKING -> "正在检查合并状态，请稍候"
+                mr.state != MergeRequestState.OPENED -> "当前状态不可合并"
+                mr.blockReason == MergeBlockReason.CI_RUNNING ->
+                    "流水线运行中，点击可设置流水线通过后自动合并"
+                mr.blockReason == MergeBlockReason.CI_FAILED -> "流水线未通过，暂不能合并"
+                mr.blockReason != MergeBlockReason.NONE && mr.blockReason != MergeBlockReason.UNKNOWN ->
+                    "暂不能合并：${mr.blockReason.displayName}"
+                else -> "接受并合并此请求"
+            }
         }
     }
 
