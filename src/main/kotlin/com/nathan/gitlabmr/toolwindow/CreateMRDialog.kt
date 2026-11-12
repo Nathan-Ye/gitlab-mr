@@ -493,7 +493,7 @@ class CreateMRDialog(
     }
 
     /**
-     * 源分支和目标分支都选定后，按 “Merge Request：源分支 --> 目标分支” 自动填充标题。
+     * 源分支和目标分支都选定后，按 “Merge Request：源分支 → 目标分支” 自动填充标题。
      * 用户手动改过标题时保留手动内容；切到新的分支组合后重新自动填充。
      */
     private fun updateAutoTitle() {
@@ -510,7 +510,7 @@ class CreateMRDialog(
             return
         }
 
-        titleField.text = "Merge Request：$sourceBranch --> $targetBranch"
+        titleField.text = "Merge Request：$sourceBranch → $targetBranch"
         lastAutoFilledBranches = branchPair
     }
 
