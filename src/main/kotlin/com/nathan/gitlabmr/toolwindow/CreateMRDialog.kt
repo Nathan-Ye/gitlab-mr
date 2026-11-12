@@ -515,7 +515,7 @@ class CreateMRDialog(
     }
 
     /**
-     * 选定源分支后，按 “源分支最新提交：\n<提交标题>” 自动填充描述。
+     * 选定源分支后，按 “最新提交：\n<提交标题>” 自动填充描述。
      * 用户手动改过描述时保留手动内容；切到新的源分支后重新自动填充。
      */
     private fun updateAutoDescription() {
@@ -537,7 +537,7 @@ class CreateMRDialog(
             ?.takeIf { it.isNotEmpty() }
             ?: return
 
-        descriptionArea.text = "源分支最新提交：\n$commitTitle"
+        descriptionArea.text = "最新提交：\n$commitTitle"
         lastAutoFilledSourceBranch = sourceBranch
     }
 
