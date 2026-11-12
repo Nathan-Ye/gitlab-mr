@@ -29,7 +29,7 @@ Output: `build/distributions/gitlab-mr-[version].zip`
 
 ### Running the Plugin in Development
 1. Open project in IntelliJ IDEA (2024.2+)
-2. Configure SDK: File → Project Structure → Project → SDK: Java 17
+2. Configure SDK: File → Project Structure → Project → SDK: Java 21
 3. Run → Edit Configurations → Add "Plugin" configuration
 4. Click Run (Shift+F10) - launches a sandbox IDEA instance with plugin loaded
 
@@ -69,8 +69,11 @@ gradlew.bat clean
     - `getMergeRequests(projectId, state, page, perPage)` - Paginated MR listing
     - `getAllMergeRequests()` - Auto-paginates to fetch all MRs
     - `getMergeRequestChanges(projectId, mrIid)` - Gets MR change files
+    - `mergeMergeRequest(projectId, mrIid, shouldRemoveSourceBranch, mergeWhenPipelineSucceeds)` - Merges or sets merge-when-pipeline-succeeds
+    - `getMergeRequest(projectId, mrIid)` - Single MR refresh used by selection and polling
     - `getMergeRequestVersions(projectId, mrIid)` - Gets MR version history
     - `createMergeRequest()` - Creates a new MR
+  - Reads `head_pipeline` and `merge_when_pipeline_succeeds`, and derives `MergeBlockReason` from `detailed_merge_status` (falling back to `merge_status` + pipeline state)
   - Internal DTOs (`MergeResponseDto`, `AuthorDto`) convert to domain models
 - `MRDiffContentLoader.kt` - Loads diff content for MR file comparison
   - Fetches file content at specific commits for diff viewing
@@ -97,6 +100,8 @@ gradlew.bat clean
 - `GitLabProject` - Project info (id, name, path, webUrl, etc.)
 - `GitLabMergeRequest` - MR with all fields (state, branches, author, assignees, etc.)
 - `MergeRequestState` - Enum: OPENED, CLOSED, LOCKED, MERGED, CHECKING
+- `MergeBlockReason` - Enum: NONE, CI_RUNNING, CI_FAILED, CONFLICT, NEED_REBASE, APPROVAL, REQUESTED_CHANGES, DISCUSSIONS, DRAFT, EXTERNAL_CHECK, BLOCKED, UNKNOWN
+- `GitLabMergeRequest` helpers: `displayStateText()` (e.g. `待合并 · 流水线中`), `canAttemptMerge()`, `autoMergeText()`, `isMergeStatusPending()`, `isPipelineRunning()`
 - `GitLabUser` - User details
 - `GitLabBranch` - Branch info
 - `GitLabMember` - Project member info
@@ -137,7 +142,7 @@ gradlew.bat clean
 - Services: `GitLabApplicationService` (app), `GitLabProjectService` (project)
 - Actions: Refresh, AddServer (with icons)
 - Dependencies: `Git4Idea` (optional)
-- Platform support: since-build="242", until-build="253.*"
+- Platform support: since-build="242", no `until-build` upper bound
 
 ### Configuration Loading Flow
 
@@ -193,19 +198,33 @@ gradlew.bat clean
 - Filtering is client-side after data loads
 - Pagination state: `currentPage`, `hasMore`, `isLoadingMore`
 
+### Merge Status & Auto-Merge
+
+- `MergeBlockReason` describes why an open MR cannot be merged yet, without changing `MergeRequestState` lifecycle semantics
+- The reason comes from `detailed_merge_status`; on GitLab versions that omit it, `merge_status` is combined with the project's `only_allow_merge_if_pipeline_succeeds` and `head_pipeline.status`
+- `state=locked` with conflicts stays `LOCKED`; without conflicts it maps to `CHECKING` because GitLab returns `locked` while a merge is in progress
+- Merging refreshes the MR first (`getMergeRequest`), then either merges directly, offers "merge when pipeline succeeds", or reports the blocking reason (405/409 handled explicitly)
+- Merge-status polling uses a 3s interval with a 10 minute cap and stops when `isMergeStatusPending()` is false
+- Background refreshes use `MRDetailsPanel.ScrollBehavior.PRESERVE` and skip reloading the change list; selecting another MR resets to the top
+
 ### MR Changes Tree & Diff Viewer
 
 - `MRChangesTreePanel` displays changed files in a tree structure grouped by directory/module
 - Change types: Added, Modified, Deleted, Renamed (with different icons)
 - Expand/collapse operations: "Expand All" and "Collapse to Module Level"
 - Double-click on file triggers native IntelliJ Diff viewer via `MRDiffService`
+- All changed text files are put into one `SimpleDiffRequestChain` in changes-tree order, so previous/next difference navigates across neighbouring files
+- When the changed file exists in the local repository, the request is built against that file so the diff window offers "Jump to Source"
 - `MRDiffContentLoader` fetches file content at base and head commits for comparison
 - Binary files are detected and handled gracefully
 
 ### Create MR Dialog
 
-- Pre-fills title and description from current branch's latest commit
+- Title is auto-filled as `Merge Request：<source> → <target>` once both branches are selected
+- Description is auto-filled as `最新提交：\n<latest commit title>` from the selected source branch (commit title comes from the preloaded branch list, no extra request)
+- Manual edits win until the branch combination changes, which resets the auto-fill
 - Supports selecting source branch, target branch, and assignee
+- Source/target/assignee dropdowns support keyword filtering with Enter
 - Option to delete source branch after merge
 - Integrates "Merge current branch" shortcut action
 
@@ -221,7 +240,7 @@ gradlew.bat clean
 
 5. **Git4Idea Dependency**: Marked optional in `plugin.xml`. Plugin works without Git integration but features requiring it (like remote URL extraction) will be limited.
 
-6. **Build Compatibility**: Plugin targets IntelliJ 2024.2+ (build 242) through 2025.3 (253.*). Modify `patchPluginXml` block in `build.gradle.kts` to change range.
+6. **Build Compatibility**: Plugin targets IntelliJ 2024.2+ (build 242) with no upper `untilBuild` bound. Modify `patchPluginXml` block in `build.gradle.kts` to change range.
 
 ## Testing the Plugin
 

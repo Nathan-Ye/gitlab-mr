@@ -9,10 +9,11 @@ This file is the current repo-specific map for coding agents working in `gitlab-
 - Project type: IntelliJ IDEA plugin
 - Plugin name: `GitLab MR`
 - Plugin ID: `com.nathan.gitlabmr`
-- Current Gradle project version: `2.0.0`
 - Main language: Kotlin
-- Target JVM: Java 17
+- Target JVM: Java 21
 - Primary purpose: view and operate GitLab Merge Requests inside the IDE tool window
+
+The plugin release version lives only in `build.gradle.kts` (`version`) and the `plugin.xml` change-notes; do not mirror it here, since it changes on every release.
 
 UI text is primarily Chinese. Some files may render as garbled text in a terminal because of encoding/display differences; do not assume source corruption until verified in IDEA.
 
@@ -30,10 +31,11 @@ From `build.gradle.kts`, `gradle.properties`, and local build execution:
 - Bundled plugin: `Git4Idea`
 - Gradle wrapper distribution: `8.13`
 
-Compatibility metadata is now aligned:
+Compatibility metadata:
 
-- `build.gradle.kts` sets `untilBuild` to `253.*`
-- `src/main/resources/META-INF/plugin.xml` should match `until-build="253.*"`
+- `build.gradle.kts` sets `sinceBuild = "242"` and clears `untilBuild` (`null`), so there is no upper IDE bound
+- `src/main/resources/META-INF/plugin.xml` declares only `<idea-version since-build="242"/>`
+- Leaving `untilBuild` unset keeps existing installs eligible for updates on future IDEs, so run `verifyPlugin` against recommended IDEs before each release
 
 ---
 
@@ -44,6 +46,7 @@ Key source roots:
 - `src/main/kotlin/com/nathan/gitlabmr`
 - `src/main/resources/META-INF`
 - `src/main/resources/icons`
+- `src/test/kotlin/com/nathan/gitlabmr`
 
 Notable Kotlin modules:
 
@@ -64,25 +67,32 @@ Notable Kotlin modules:
   - settings UI
 - `model/GitLabServer.kt`
   - core models, including MR, changed files, diff refs, diff payloads
+  - `MergeBlockReason`, `PIPELINE_RUNNING_STATUSES` / `PIPELINE_FAILED_STATUSES`, and MR helpers such as `displayStateText()`, `canAttemptMerge()`, `isMergeStatusPending()`
 - `toolwindow/GitLabToolWindowContent.kt`
   - top-level coordinator
   - MR selection, change loading, diff opening
+  - merge flow: refresh the MR first, then merge / set auto-merge / report the blocking reason
+  - merge-status polling (3s interval, 10 minute cap) and silent MR refresh on selection
 - `toolwindow/MRDiffService.kt`
   - integrates with IntelliJ native diff viewer
+  - builds a diff request chain over all changed files in changes-tree order and prefers local files for “Jump to Source”
 - `toolwindow/components/MRChangesTreePanel.kt`
   - MR changed file tree
   - expand / collapse helpers
+  - `getOrderedChangeFiles()` exposes the tree order used by the diff chain
 - `toolwindow/components/MRDetailsPanel.kt`
   - MR details tabs
   - change tab toolbar visibility and actions
+  - state text with blocking reason, auto-merge badge, scroll behavior on refresh
 - `toolwindow/components/MRActionToolbar.kt`
-  - MR action buttons
+  - MR action buttons, merge button state from `GitLabMergeRequest.canAttemptMerge()`
   - change-tree expand / collapse actions
 - `util/`
-  - Git helpers
+  - Git helpers (including `GitUtil.findLocalFile()`)
+  - branch / assignee filter helpers
   - notification helpers
 
-There is still no `src/test` tree.
+Unit tests live under `src/test/kotlin/com/nathan/gitlabmr/util` (`AssigneeFiltersTest`, `BranchFiltersTest`) and run with `gradlew.bat test`.
 
 ---
 
@@ -127,7 +137,8 @@ Initialization flow:
 4. Read the `origin` remote URL.
 5. Extract the GitLab project path from that remote.
 6. Call `apiClient.getProject(projectPath)`.
-7. Load page 1 of merge requests.
+7. Copy `project.onlyAllowMergeIfPipelineSucceeds` into `apiClient.pipelineMustSucceed`, so merge blocking reasons can be inferred on GitLab versions that omit `detailed_merge_status`.
+8. Load page 1 of merge requests.
 
 Current fallback behavior:
 
@@ -152,15 +163,20 @@ Verified from `GitLabToolWindowContent`, `MRListPanel`, `MRDetailsPanel`, `MRAct
 - Open MR in browser
 - Close MR
 - Merge MR
+- Set “merge when pipeline succeeds” when the head pipeline is still running
+- Show the merge blocking reason in the state line and in failure notifications
 - Delete MR
 - Create MR
 - Optional remove-source-branch when creating or merging
-- Prefill MR title/description from latest commit on selected source branch
+- Auto-fill MR title as `Merge Request：<source> → <target>` once both branches are selected
+- Auto-fill MR description as `最新提交：\n<latest commit title>` from the selected source branch
 - “merge current branch” helper in create dialog
 - Preload branches and members before opening the create dialog
 - “变更” tab for MR changed files
 - Changed-file tree grouped by module
 - Double-click changed file to open IntelliJ native Diff
+- Diff request chain over all text files in changes-tree order, so previous / next difference continues into neighbouring files
+- “Jump to Source” from the diff window when the changed file exists locally
 - Diff support for `ADDED`, `MODIFIED`, `DELETED`, `RENAMED`
 - Toolbar actions on the “变更” tab:
   - expand all
@@ -169,6 +185,11 @@ Verified from `GitLabToolWindowContent`, `MRListPanel`, `MRDetailsPanel`, `MRAct
 Behavior details:
 
 - `LOCKED` is not a direct GitLab state. The client maps `OPENED + has_conflicts=true` to `MergeRequestState.LOCKED`.
+- GitLab also returns `state=locked` while a merge is in progress; without conflicts that maps to `CHECKING`, so polling continues until the MR becomes `MERGED`.
+- Merge blocking reasons come from `MergeBlockReason` and are derived from `detailed_merge_status`, falling back to `merge_status` plus `head_pipeline` on older GitLab versions.
+- The merge button state comes from `GitLabMergeRequest.canAttemptMerge()`: enabled for `NONE`, `CI_RUNNING` and `UNKNOWN`, and disabled once auto-merge is already set.
+- Merge-status polling runs every 3s with a 10 minute cap and stops when `isMergeStatusPending()` becomes false.
+- Selecting an MR triggers a silent `getMergeRequest` refresh; detail refreshes keep the current scroll position and skip reloading the change list.
 - Delete is enabled only for `OPENED` and `CLOSED`.
 - Merge and close are enabled only for `OPENED`.
 - Expand/collapse actions are visible only while the “变更” tab is active.
@@ -205,6 +226,8 @@ Implementation notes:
 - `encodeProjectId()` is used where numeric IDs and path IDs both need support
 - Repository file content loading includes basic UTF-8 decode and text/binary detection
 - Final binary handling for diffs is based on loaded file content, not just MR patch metadata
+- `mergeMergeRequest()` accepts `mergeWhenPipelineSucceeds`, which sends `merge_when_pipeline_succeeds` alongside `should_remove_source_branch`
+- MR DTO mapping reads `head_pipeline` and `merge_when_pipeline_succeeds`; the merge endpoint may answer without a body, so callers treat a missing DTO as success and poll instead
 
 ---
 
@@ -244,14 +267,16 @@ Expected commands:
 
 ```powershell
 gradlew.bat buildPlugin
+gradlew.bat test
+gradlew.bat verifyPlugin
 gradlew.bat clean
-verify.bat
 ```
 
 Current verified state:
 
 - `./gradlew.bat buildPlugin` succeeds in this repository
 - Local verification basis includes successful builds on `2026-03-31`
+- The `feature/create-mr-auto-title` changes documented here were not re-verified during the doc update; run `gradlew.bat test` and `gradlew.bat buildPlugin` before releasing
 
 Important caveat:
 
@@ -302,10 +327,10 @@ When editing Git-related behavior:
 
 When editing MR state or diff behavior:
 
-- Check `MergeRequestState` in `model/GitLabServer.kt`.
-- Check DTO mapping in `GitLabApiClient`.
-- Check enable/disable rules in `MRActionToolbar`.
-- Check diff content resolution in `MRDiffContentLoader`.
+- Check `MergeRequestState` and `MergeBlockReason` in `model/GitLabServer.kt`.
+- Check DTO mapping and `resolveMergeBlockReason()` in `GitLabApiClient`.
+- Check merge button enable/disable rules in `MRActionToolbar` and `canAttemptMerge()`.
+- Check diff content resolution in `MRDiffContentLoader` and chain building in `MRDiffService`.
 
 ---
 
@@ -321,8 +346,14 @@ If running the plugin in an IDE sandbox, validate at least:
 - create MR with preloaded branches/members
 - use “merge current branch”
 - close, merge, and delete an MR
+- merge an MR whose pipeline already passed
+- merge an MR whose pipeline is running and confirm the auto-merge prompt and the auto-merge badge
+- merge an MR blocked by conflicts, approvals, or draft state and verify the reported reason
+- verify the detail panel keeps its scroll position during background refresh
 - load the “变更” tab
 - double-click a changed text file and verify native Diff opens
+- verify previous / next difference continues into neighbouring files
+- verify “Jump to Source” for a changed file that exists locally
 - verify added / modified / deleted / renamed file cases
 - verify “全部展开”
 - verify “全部收起” leaves only module nodes visible
@@ -348,8 +379,8 @@ If running the plugin in an IDE sandbox, validate at least:
 
 ## Last Updated
 
-- Date: `2026-04-13`
-- Basis: direct scan of repository files, review of the latest three commits, and successful local `./gradlew.bat buildPlugin`
+- Date: `2026-11-12`
+- Basis: direct scan of repository files, review of the feature-branch commits on top of the last release tag, and current `build.gradle.kts` / `plugin.xml` metadata
 
 ## Package Rename (2026-04-13)
 

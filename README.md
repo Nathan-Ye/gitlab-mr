@@ -41,14 +41,19 @@
 
 ### MR 详情与操作
 - 查看 MR 标题、描述、作者、分支、状态、时间等完整信息
+- 状态处直接展示合并阻塞原因（流水线中、有冲突、需变基、待审批、草稿等）
 - 在浏览器中打开 MR
 - 关闭 / 合并 / 删除 MR
-- 创建新 MR，支持从当前分支预填标题和描述
+- 流水线尚未结束时，可选择设置为"流水线通过后自动合并"，详情页会显示自动合并标记
+- 合并状态在后台自动轮询刷新，且不会打断当前阅读位置
+- 创建新 MR：源分支和目标分支都选定后，自动生成标题 `Merge Request：源分支 → 目标分支`，并按源分支最新提交自动填充描述
 - 创建 MR 时，源/目标分支和指派人下拉框均支持关键字筛选（输入后按回车刷新下拉）
 
 ### 变更文件 Diff
 - 在"变更"标签页查看改动文件树，按模块分组
 - 双击文件调用 IntelliJ 原生 Diff 窗口对比 before/after
+- Diff 按变更树的顺序组成差异链，上一个/下一个差异可连续跨文件浏览
+- 变更文件在本地仓库存在时，Diff 窗口支持 "Jump to Source" 跳转到源码
 - 支持新增、修改、删除、重命名的文本文件
 - 全部展开 / 全部收起
 
@@ -59,7 +64,7 @@
 | 组件 | 版本 |
 |------|------|
 | Kotlin | 2.1.0 |
-| IntelliJ Platform | IC 2024.2 (Build 242 - 253.*) |
+| IntelliJ Platform | IC 2024.2 (Build 242 起，不设上限) |
 | OkHttp | 4.12.0 |
 | Gson | 2.10.1 |
 | Java | 21 |
@@ -98,27 +103,22 @@
 
 ```
 src/main/kotlin/com/nathan/gitlabmr/
-├── GitLabPlugin.kt              # 插件主类与生命周期
-├── GitLabApplicationService.kt  # 应用级服务
-├── GitLabProjectService.kt      # 项目级服务
+├── GitLabPlugin.kt                  # 插件主类与服务
+├── actions/                         # 工具栏 Action
 ├── api/
-│   ├── GitLabApiClient.kt       # GitLab REST API 客户端
-│   ├── MRDiffContentLoader.kt   # Diff 内容加载器
-│   └── MRDiffService.kt         # IntelliJ Diff 集成
-├── config/
-│   ├── GitLabConfigService.kt   # 应用级配置持久化
-│   ├── GitLabProjectConfigService.kt  # 项目级配置持久化
-│   └── GitLabServerDialog.kt    # 服务器配置对话框
+│   ├── GitLabApiClient.kt           # GitLab REST API 客户端
+│   └── MRDiffContentLoader.kt       # Diff 内容加载器
+├── config/                          # 应用级 / 项目级配置持久化与设置界面
 ├── model/
-│   └── GitLabServer.kt          # 数据模型
-└── toolwindow/
-    ├── GitLabToolWindowFactory.kt    # 工具窗口工厂
-    ├── GitLabToolWindowContent.kt    # 工具窗口内容管理器
-    └── components/
-        ├── MRListPanel.kt       # MR 列表与筛选
-        ├── MRDetailsPanel.kt    # MR 详情面板
-        ├── MRChangesTreePanel.kt # 变更文件树
-        └── MRActionToolbar.kt    # MR 操作工具栏
+│   └── GitLabServer.kt              # 数据模型（含合并阻塞原因、流水线状态）
+├── toolwindow/
+│   ├── GitLabToolWindowFactory.kt   # 工具窗口工厂
+│   ├── GitLabToolWindowContent.kt   # 工具窗口内容管理器
+│   ├── MRDiffService.kt             # IntelliJ Diff 集成（跨文件差异链）
+│   ├── CreateMRDialog.kt            # 创建 MR 弹框
+│   ├── GitLabServerDialog.kt        # 服务器配置对话框
+│   └── components/                  # MR 列表 / 详情 / 变更树 / 操作工具栏
+└── util/                            # Git、筛选、通知等工具
 ```
 
 ---

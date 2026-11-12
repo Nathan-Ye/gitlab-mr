@@ -41,6 +41,17 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>4.0.0</h3>
+        <ul>
+            <li>Merge actions are now status-aware: the state line shows why a merge request is blocked (pipeline, conflicts, rebase, approvals, draft, etc.), failures explain the reason, and a running pipeline offers "merge when pipeline succeeds".</li>
+            <li>Merge status polling is faster (3s, up to 10 minutes), and background refreshes keep your scroll position and no longer reload the changed file list.</li>
+            <li>Create MR dialog fills the title as "Merge Request: source → target" and the description with the latest commit of the source branch.</li>
+            <li>MR diffs form a cross-file chain in changes-tree order, and "Jump to Source" works when the changed file exists locally.</li>
+            <li>合并操作会先判断真实状态：状态栏展示阻塞原因（流水线、冲突、需变基、审批、草稿等），失败时给出具体原因，流水线运行中可设置「流水线通过后自动合并」。</li>
+            <li>合并状态轮询改为每 3 秒、最长 10 分钟；后台刷新保持当前滚动位置，且不再重复加载变更文件列表。</li>
+            <li>创建 MR 时自动填充标题「Merge Request：源分支 → 目标分支」与源分支最新提交作为描述。</li>
+            <li>MR 差异按变更树顺序组成跨文件差异链，并支持「Jump to Source」跳转到本地源码。</li>
+        </ul>
         <h3>3.0.3</h3>
         <ul>
             <li>Create MR dialog: source and target branch dropdowns now support keyword filtering — type a keyword and press Enter to narrow the list (case-insensitive contains match), or clear the input and press Enter to show all branches again. Enter in these fields filters the list instead of submitting the dialog.</li>

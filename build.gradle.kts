@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.nathan.gitlabmr"
-version = "3.0.3"
+version = "4.0.0"
 
 repositories {
     mavenCentral()

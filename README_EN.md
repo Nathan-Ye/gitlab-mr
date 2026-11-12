@@ -41,14 +41,19 @@ Plugin artifact: `build/distributions/gitlab-mr-[version].zip`
 
 ### MR Details & Actions
 - View full MR info: title, description, author, branches, state, timestamps
+- The state line shows the merge blocking reason (pipeline running, conflicts, rebase needed, approvals, draft, etc.)
 - Open MR in browser
 - Close / Merge / Delete MR
-- Create new MR, with title and description pre-filled from the current branch's latest commit
+- When the pipeline is still running, opt into "merge when pipeline succeeds"; the details panel then shows an auto-merge badge
+- Merge status is refreshed by background polling without resetting your reading position
+- Create new MR: once source and target branches are selected, the title is filled as `Merge Request: <source> → <target>` and the description with the latest commit of the source branch
 - Searchable source/target branch and assignee dropdowns in the Create MR dialog (type a keyword and press Enter)
 
 ### Changed Files Diff
 - Browse changed files tree grouped by module in the "Changes" tab
 - Double-click a file to open IntelliJ's native Diff viewer for before/after comparison
+- Diffs form a request chain in changes-tree order, so previous/next difference keeps going across neighbouring files
+- "Jump to Source" works when the changed file exists in the local repository
 - Supports Added, Modified, Deleted, and Renamed text files
 - Expand All / Collapse to Module Level
 
@@ -59,7 +64,7 @@ Plugin artifact: `build/distributions/gitlab-mr-[version].zip`
 | Component | Version |
 |-----------|---------|
 | Kotlin | 2.1.0 |
-| IntelliJ Platform | IC 2024.2 (Build 242 - 253.*) |
+| IntelliJ Platform | IC 2024.2 (build 242+, no upper bound) |
 | OkHttp | 4.12.0 |
 | Gson | 2.10.1 |
 | Java | 21 |
@@ -98,27 +103,22 @@ For single-repository projects, the plugin automatically resolves the GitLab pro
 
 ```
 src/main/kotlin/com/nathan/gitlabmr/
-├── GitLabPlugin.kt              # Plugin main class & lifecycle
-├── GitLabApplicationService.kt  # Application-level service
-├── GitLabProjectService.kt      # Project-level service
+├── GitLabPlugin.kt                  # Plugin main class & services
+├── actions/                         # Toolbar actions
 ├── api/
-│   ├── GitLabApiClient.kt       # GitLab REST API client
-│   ├── MRDiffContentLoader.kt   # Diff content loader
-│   └── MRDiffService.kt         # IntelliJ Diff integration
-├── config/
-│   ├── GitLabConfigService.kt   # Application-level config persistence
-│   ├── GitLabProjectConfigService.kt  # Project-level config persistence
-│   └── GitLabServerDialog.kt    # Server config dialog
+│   ├── GitLabApiClient.kt           # GitLab REST API client
+│   └── MRDiffContentLoader.kt       # Diff content loader
+├── config/                          # Application/project config persistence & settings UI
 ├── model/
-│   └── GitLabServer.kt          # Data models
-└── toolwindow/
-    ├── GitLabToolWindowFactory.kt    # Tool window factory
-    ├── GitLabToolWindowContent.kt    # Tool window content manager
-    └── components/
-        ├── MRListPanel.kt       # MR list & filtering
-        ├── MRDetailsPanel.kt    # MR detail panel
-        ├── MRChangesTreePanel.kt # Changed files tree
-        └── MRActionToolbar.kt    # MR action toolbar
+│   └── GitLabServer.kt              # Data models (incl. merge block reason, pipeline state)
+├── toolwindow/
+│   ├── GitLabToolWindowFactory.kt   # Tool window factory
+│   ├── GitLabToolWindowContent.kt   # Tool window content manager
+│   ├── MRDiffService.kt             # IntelliJ Diff integration (cross-file diff chain)
+│   ├── CreateMRDialog.kt            # Create MR dialog
+│   ├── GitLabServerDialog.kt        # Server config dialog
+│   └── components/                  # MR list / details / changes tree / action toolbar
+└── util/                            # Git, filter and notification helpers
 ```
 
 ---
