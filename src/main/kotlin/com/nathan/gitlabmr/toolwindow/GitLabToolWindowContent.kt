@@ -1,7 +1,6 @@
 package com.nathan.gitlabmr.toolwindow
 
 import com.nathan.gitlabmr.api.GitLabApiClient
-import com.nathan.gitlabmr.api.MRDiffContentLoader
 import com.nathan.gitlabmr.config.GitLabConfigService
 import com.nathan.gitlabmr.config.GitLabProjectConfigService
 import com.nathan.gitlabmr.model.*
@@ -200,27 +199,21 @@ class GitLabToolWindowContent(
             GitLabNotifications.showError(project, "错误", "请先选择一个合并请求")
             return
         }
+        val changeFiles = mainContentPanel.getOrderedChangeFiles().ifEmpty { listOf(changeFile) }
 
         openDiffJob?.cancel()
 
-        openDiffJob = launch(Dispatchers.IO) {
+        openDiffJob = launch {
             try {
-                val payloadResponse = MRDiffContentLoader(apiClient)
-                    .loadDiffPayload(projectId, mergeRequest, changeFile)
-
-                if (!payloadResponse.success || payloadResponse.data == null) {
-                    ApplicationManager.getApplication().invokeLater {
-                        GitLabNotifications.showError(
-                            project,
-                            "打开差异失败",
-                            payloadResponse.error ?: "无法构建差异内容"
-                        )
-                    }
-                    return@launch
+                // diff_refs 缺失时先补全一次，避免差异链里每个文件重复请求合并请求详情
+                val resolvedMergeRequest = if (mergeRequest.diffRefs != null) {
+                    mergeRequest
+                } else {
+                    apiClient.getMergeRequest(projectId, mergeRequest.iid).data ?: mergeRequest
                 }
 
                 ApplicationManager.getApplication().invokeLater {
-                    diffService.showDiff(payloadResponse.data)
+                    diffService.showDiff(apiClient, projectId, resolvedMergeRequest, changeFiles, changeFile)
                 }
             } catch (_: CancellationException) {
                 // Ignore stale open requests triggered by rapid repeated clicks.
@@ -1018,6 +1011,8 @@ class GitLabToolWindowContent(
             currentRepositoryRoot = root
             mrDetailsPanel.setRepositoryRoot(root)
         }
+
+        fun getOrderedChangeFiles(): List<GitLabMergeRequestChangeFile> = mrDetailsPanel.getOrderedChangeFiles()
 
         fun updateLoadMoreStatus(hasMore: Boolean) {
             mrListPanel.updateLoadStatus(hasMore)

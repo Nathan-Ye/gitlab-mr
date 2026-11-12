@@ -583,6 +583,8 @@ class MRDetailsPanel(project: Project) : JPanel() {
         changesTreePanel.setRepositoryRoot(root)
     }
 
+    fun getOrderedChangeFiles(): List<GitLabMergeRequestChangeFile> = changesTreePanel.getOrderedChangeFiles()
+
     fun setMergeRequestChangesError(message: String?) {
         changesTreePanel.showError(message ?: "改动文件加载失败")
     }

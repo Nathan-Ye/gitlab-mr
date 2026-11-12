@@ -109,6 +109,27 @@ class MRChangesTreePanel(
         cardLayout.show(cardPanel, "TREE")
     }
 
+    /**
+     * 按树中自上而下的展示顺序返回变更文件，用于差异窗口的前后文件跳转。
+     */
+    fun getOrderedChangeFiles(): List<GitLabMergeRequestChangeFile> {
+        val orderedFiles = mutableListOf<GitLabMergeRequestChangeFile>()
+
+        fun visit(node: DefaultMutableTreeNode) {
+            val userObject = node.userObject
+            if (userObject is FileNode) {
+                orderedFiles.add(userObject.context.changeFile)
+                return
+            }
+            for (index in 0 until node.childCount) {
+                (node.getChildAt(index) as? DefaultMutableTreeNode)?.let(::visit)
+            }
+        }
+
+        visit(treeRoot)
+        return orderedFiles
+    }
+
     fun expandAllChanges() {
         if (treeRoot.childCount == 0) return
         expandAll()
